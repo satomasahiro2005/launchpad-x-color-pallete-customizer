@@ -1,0 +1,10 @@
+{
+  "name": "launchpad-x-color-pallete-customizer",
+  "private": true,
+  "author": "nemut.ai",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs"
+  }
+}
