@@ -105,6 +105,7 @@ const state = {
   paletteDirty: false,
   stockFirmware: null,
   syncTranspose: false,
+  deviceLook: false,
   table: { ...DEFAULT_NOTE_TABLE },
 };
 
@@ -141,6 +142,7 @@ const elements = {
   rgbR: document.querySelector("#rgb-r"),
   rgbG: document.querySelector("#rgb-g"),
   rgbB: document.querySelector("#rgb-b"),
+  deviceLookCheckbox: document.querySelector("#device-look-checkbox"),
 };
 
 const midiManager = createMidiManager({
@@ -253,6 +255,11 @@ function init() {
 
   [elements.rgbR, elements.rgbG, elements.rgbB].forEach((input) => {
     input.addEventListener("input", onRgbInput);
+  });
+
+  elements.deviceLookCheckbox.addEventListener("change", () => {
+    state.deviceLook = elements.deviceLookCheckbox.checked;
+    render();
   });
 
   render();
@@ -847,10 +854,36 @@ function getFirstGridCellForPitch(pitch) {
 }
 
 function colorHex([r, g, b]) {
+  if (state.deviceLook) return deviceColorHex(r, g, b);
   const scale = (channel) => Math.min(255, Math.round(channel * 4));
   return `#${scale(r).toString(16).padStart(2, "0")}${scale(g)
     .toString(16)
     .padStart(2, "0")}${scale(b).toString(16).padStart(2, "0")}`;
+}
+
+// sRGB opto-electronic transfer function (linear light 0..1 -> sRGB 0..1).
+function srgbEncode(c) {
+  c = Math.min(1, Math.max(0, c));
+  return c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
+}
+
+// Approximate how the raw palette RGB (0-63) looks on the Launchpad's diffused
+// LEDs. The pad value is treated as the LED's *linear* light output, then
+// properly colour-space converted to sRGB for the screen (this alone makes mids
+// read brighter, like the hardware). A diffuser "bloom" then washes brighter
+// pads toward white, applied in linear light. Colour temperature/white point is
+// not matched — it's a visual guide, not a calibrated profile.
+function deviceColorHex(r, g, b) {
+  if (r + g + b === 0) return "#000000"; // an off pad stays off
+  let linear = [r, g, b].map((c) => c / 63); // LED drive ≈ linear radiance
+  const max = Math.max(linear[0], linear[1], linear[2]);
+  // Diffuser/sensor wash toward white — tuned to the washed look sampled from
+  // the 4000K-locked device photos (saturated pads read quite desaturated).
+  const bloom = 0.38 * max + 0.06;
+  linear = linear.map((c) => Math.min(1, c + bloom * (1 - c)));
+  return `#${linear
+    .map((c) => Math.round(srgbEncode(c) * 255).toString(16).padStart(2, "0"))
+    .join("")}`;
 }
 
 async function refreshMidi() {
