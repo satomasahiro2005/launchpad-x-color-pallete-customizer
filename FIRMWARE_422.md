@@ -130,6 +130,11 @@ wrong.) See `COLOR_PALETTE_USAGE.md` and `SCREEN_COLOR_MAP.md` for the full trac
 | Transpose B base | `0x24` |
 | Transpose B blend | `0x2d` |
 
+> These are the firmware's actual slots, traced from disassembly, and the values
+> the app's Mode/Custom tab and transpose targets are aligned to in the current
+> UI. An earlier build exposed the unverified `0x01 / 0x24 / 0x34` tab candidate
+> instead; that has since been corrected.
+
 When `Sync transpose color with note color` is enabled, export/write overwrites
 the transpose slots from the selected Note colors:
 
