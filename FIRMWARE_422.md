@@ -1,17 +1,17 @@
-# Launchpad X Firmware 4.2.2 Notes
+# Launchpad X Firmware v2.0.1 Notes
 
-This document records what this app changes in the Launchpad X 4.2.2 firmware
+This document records what this app changes in the Launchpad X v2.0.1 firmware
 image. It is intentionally offset-based and does not include any firmware bytes
 or bundled firmware files.
 
 ## Scope
 
 - Target device: Novation Launchpad X
-- Target firmware: 4.2.2
+- Target firmware: v2.0.1
 - Firmware input: official `.syx` from Novation Components, or a decoded raw
   firmware image
 - Firmware output: patched `.syx`
-- Official 4.2.2 raw firmware SHA-256:
+- Official v2.0.1 raw firmware SHA-256:
 
 ```text
 9cbb359292aeb93affc50d9b6a7b80449e034686927fc5e2e5f6572cf3ddee8e
@@ -22,7 +22,7 @@ image. It is not the hash of the `.syx` wrapper.
 
 ## Layout Guard
 
-Before patching, the app checks fixed bytes that identify the expected 4.2.2
+Before patching, the app checks fixed bytes that identify the expected v2.0.1
 layout:
 
 | Offset | Expected |
@@ -36,7 +36,7 @@ layout:
 | `0x12036` | `0x00` |
 | `0x12037` | `0x00` |
 
-If any byte differs, patching stops. This prevents writing 4.2.2 offsets into a
+If any byte differs, patching stops. This prevents writing v2.0.1 offsets into a
 different firmware layout.
 
 ## Note Mode Color Table
@@ -111,7 +111,7 @@ The Note table above is confirmed from disassembly. The mode/custom tab
 three-state table is a strong binary candidate, but the final renderer call path
 has not been fully traced yet.
 
-At raw firmware offset `0x12974`, 4.2.2 contains this repeated triplet:
+At raw firmware offset `0x12974`, v2.0.1 contains this repeated triplet:
 
 ```text
 01 24 34  01 24 34  01 24 34  01 24 34 ...
@@ -158,7 +158,7 @@ palette slot.
 
 1. Read a user-provided `.syx` or `.bin`.
 2. Decode SysEx if needed.
-3. Verify the 4.2.2 layout guard bytes.
+3. Verify the v2.0.1 layout guard bytes.
 4. Extract the current palette from `0x12034`.
 5. Extract the Note table from `0x0d126`, `0x0d128`, `0x0d12e`,
    and `0x0d130`.
@@ -176,7 +176,7 @@ Known values:
 | Manufacturer header | `f0 00 20 29 00` |
 | Family ID | `0x02` |
 | Product ID | `0x0c` |
-| Version digits | `4.2.2` |
+| Version digits (raw SysEx field) | `0x04 0x02 0x02` |
 
 Message commands used:
 

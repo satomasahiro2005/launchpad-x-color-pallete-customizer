@@ -1,4 +1,4 @@
-# Launchpad X 4.2.2 — Per-screen grid & colour edit points
+# Launchpad X v2.0.1 — Per-screen grid & colour edit points
 
 Purpose: groundwork for a **future editor that lets you walk through every
 Launchpad screen and change which palette number each colour points to**. For

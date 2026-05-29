@@ -1,12 +1,13 @@
-# Launchpad X 4.2.2 — Palette usage by screen (firmware analysis)
+# Launchpad X v2.0.1 — Palette usage by screen (firmware analysis)
 
-Disassembly of the Launchpad X 4.2.2 firmware (`launchpadx-firmware-422.syx`) to
+Disassembly of the Launchpad X v2.0.1 firmware (`launchpadx-firmware-422.syx`) to
 map **which screen (mode / surface) uses which index of the 128-colour palette,
-and where**.
+and where**. (The firmware package file is labelled `422`; the device application
+version is **v2.0.1**.)
 
 - Input SysEx: `launchpadx-firmware-422.syx` (110,661 bytes)
 - Decoded raw image: 80,433 bytes / SHA-256 `9cbb359292aeb93affc50d9b6a7b80449e034686927fc5e2e5f6572cf3ddee8e`
-  (= official 4.2.2; matches the hash recorded in `FIRMWARE_422.md`)
+  (= the official v2.0.1 image; matches the hash recorded in `FIRMWARE_422.md`)
 - Disassembler: `arm-none-eabi-objdump` (ARM Cortex-M / Thumb)
 - Reproduce with the tracked scripts in `tools/` (see the end of this doc). Raw
   images and disassembly listings live in `work/`, which is gitignored.
