@@ -240,16 +240,11 @@ function init() {
     await withBusy(async () => {
       await refreshMidi();
 
-      if (!state.device || state.device.type !== "BL_LPX") {
-        throw new Error(
-          "Launchpad X Bootloader was not found. Hold Capture MIDI while connecting the device."
-        );
-      }
-
+      const output = findBootloaderOutput();
       const firmware = await getPatchedFirmware();
       const syx = buildSysexFirmware(firmware);
-      appendMidiLog(`flashing ${syx.length} bytes to ${state.device.output.name}`);
-      await midiManager.flashToDevice(state.device.output, syx);
+      appendMidiLog(`flashing ${syx.length} bytes to ${output.name}`);
+      await midiManager.flashToDevice(output, syx);
       setNotice("Firmware write complete.");
     });
   });
@@ -265,17 +260,33 @@ function init() {
   render();
 }
 
+// The bootloader (BL_LPX) and the normal-mode (LPX) device are different MIDI
+// ports, so look each up by type instead of sharing one selected device.
+function deviceOfType(type) {
+  return state.devices.find((device) => device.type === type && device.output) || null;
+}
+
 // Light the whole palette on a connected Launchpad X (normal mode) via
 // Programmer-layout RGB lighting: 8x8 pads per page, page 0 = idx 0-63,
 // page 1 = idx 64-127. Shows the app's current colours (channels 0-63 -> 0-127).
 function findLpxOutput() {
-  const lpx = state.devices.find((device) => device.type === "LPX" && device.output);
+  const lpx = deviceOfType("LPX");
   if (!lpx) {
     throw new Error(
       "Launchpad X (normal mode) not found. Use the device normally (not bootloader), then try again."
     );
   }
   return lpx.output;
+}
+
+function findBootloaderOutput() {
+  const bl = deviceOfType("BL_LPX");
+  if (!bl) {
+    throw new Error(
+      "Launchpad X Bootloader was not found. Hold Capture MIDI while connecting the device."
+    );
+  }
+  return bl.output;
 }
 
 function showPaletteOnDevice(page) {
@@ -408,23 +419,22 @@ function renderStatus() {
   elements.firmwareState.textContent = firmwareLabel;
   elements.firmwareCheck.textContent = getFirmwareCheckText();
 
-  const midiState = midiManager.getState();
-  if (!midiState.supported) {
+  const midi = midiManager.getState();
+  const live = deviceOfType("LPX");
+  const bootloader = deviceOfType("BL_LPX");
+  if (!midi.supported) {
     elements.midiState.textContent = "WebMIDI unsupported";
-  } else if (!midiState.accessGranted) {
+  } else if (!midi.accessGranted) {
     elements.midiState.textContent = "Click Refresh MIDI";
-  } else if (!state.device) {
-    elements.midiState.textContent = "No Launchpad detected";
-  } else if (state.device.type === "BL_LPX") {
-    elements.midiState.textContent = "Launchpad X Bootloader ready";
-  } else if (state.device.type === "LPX") {
-    elements.midiState.textContent = "Launchpad X detected";
   } else {
-    elements.midiState.textContent = state.device.type;
+    elements.midiState.textContent = live ? "Connected (normal mode)" : "Not connected";
   }
 
-  elements.bootloaderState.textContent =
-    state.device && state.device.type === "BL_LPX" ? "Yes" : "No";
+  elements.bootloaderState.textContent = !midi.accessGranted
+    ? "Unknown"
+    : bootloader
+    ? "Connected"
+    : "Not connected";
   renderDeviceSelect();
   elements.syncTransposeCheckbox.checked = state.syncTranspose;
 }
