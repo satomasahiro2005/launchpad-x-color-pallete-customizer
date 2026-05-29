@@ -105,27 +105,26 @@ offset = 0x12034 + paletteIndex * 4;
 
 ## Extra Palette Slots Exposed by the UI
 
-Verification status: mixed.
+Verification status: traced from disassembly.
 
-The Note table above is confirmed from disassembly. The mode/custom tab
-three-state table is a strong binary candidate, but the final renderer call path
-has not been fully traced yet.
+The mode/custom tab colours have now been traced to the top-row / scene-column
+renderer (runtime `0x0801523C`, real base `0x0800C000`), which reads the palette
+as:
 
-At raw firmware offset `0x12974`, v2.0.1 contains this repeated triplet:
+- off / disabled    -> `0x00` (`ldr [palette, #0]`)
+- idle / unselected -> `0x01` (`ldr.w [palette, #4]`)
+- selected / lit    -> `0x1C` (`ldr [palette, #0x70]`, i.e. 0x70/4 = 0x1C)
 
-```text
-01 24 34  01 24 34  01 24 34  01 24 34 ...
-```
-
-This matches the expected three UI states for mode/custom style tabs:
-disabled, idle/unselected, selected. The old `0x1c` guess was removed because
-its occurrences in code were ambiguous and did not prove a menu LED mapping.
+The repeated triplet `01 24 34` at raw offset `0x12974` is **data only** — no
+code reference to it was found, so it does **not** drive the tab colours. (The
+earlier `0x1c` guess was correct after all; the `0x24`/`0x34` candidate was
+wrong.) See `COLOR_PALETTE_USAGE.md` and `SCREEN_COLOR_MAP.md` for the full trace.
 
 | UI target | Palette slot |
 | --- | ---: |
-| Tab disabled | `0x01` |
-| Tab idle / unselected | `0x24` |
-| Tab selected | `0x34` |
+| Tab disabled (off) | `0x00` |
+| Tab idle / unselected | `0x01` |
+| Tab selected / lit | `0x1c` |
 | Transpose A base | `0x5e` |
 | Transpose A blend | `0x5f` |
 | Transpose B base | `0x24` |
@@ -145,9 +144,9 @@ Current preview model:
 
 | Preview state | Meaning | Binary confidence |
 | --- | --- | --- |
-| Disabled | Black surface, no palette target | Preview-only |
-| Idle | Uses candidate tab idle color `0x24` | Strong candidate |
-| Selected | Uses candidate tab selected color `0x34` | Strong candidate |
+| Disabled / off | Palette `0x00` | Confirmed |
+| Idle | Palette `0x01` | Confirmed |
+| Selected / lit | Palette `0x1c` | Confirmed |
 
 Important overlap: palette slot `0x24` is also the stock Note scale color and
 the Transpose B base slot. If the app writes slot `0x24`, those surfaces may
