@@ -129,7 +129,7 @@ its occurrences in code were ambiguous and did not prove a menu LED mapping.
 | Transpose A base | `0x5e` |
 | Transpose A blend | `0x5f` |
 | Transpose B base | `0x24` |
-| Transpose B blend | `0x25` |
+| Transpose B blend | `0x2d` |
 
 When `Sync transpose color with note color` is enabled, export/write overwrites
 the transpose slots from the selected Note colors:
@@ -138,7 +138,7 @@ the transpose slots from the selected Note colors:
 palette[0x5e] = palette[table.root];
 palette[0x5f] = palette[table.root];
 palette[0x24] = palette[table.scale];
-palette[0x25] = palette[table.scale];
+palette[0x2d] = palette[table.scale];
 ```
 
 Current preview model:
