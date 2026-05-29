@@ -133,9 +133,8 @@ function renderDeviceSelect() {
   }
   if (!list.some((output) => output.id === state.selectedOutputId)) {
     const preferred =
-      list.find((o) => /launchpad|lpx/i.test(o.name || "") && /midi/i.test(o.name || "")) ||
+      list.find((o) => /daw/i.test(o.name || "")) ||
       list.find((o) => /launchpad|lpx/i.test(o.name || "")) ||
-      list.find((o) => /midi/i.test(o.name || "")) ||
       list[0];
     state.selectedOutputId = preferred.id;
   }
@@ -180,18 +179,20 @@ async function showPaletteOnDevice(page) {
   try {
     await refreshMidi();
     const output = selectedOutput();
-    midiManager.sendSysex(output, [0xf0, 0x00, 0x20, 0x29, 0x02, 0x0c, 0x0e, 0x01, 0xf7]); // Programmer mode
-    const to7 = (channel) => Math.min(127, channel * 2);
-    const specs = [];
+    // DAW mode keeps the device in normal use: Session-layout lighting shows on
+    // the Session tab, no Programmer mode needed.
+    midiManager.sendSysex(output, [0xf0, 0x00, 0x20, 0x29, 0x02, 0x0c, 0x10, 0x01, 0xf7]); // DAW mode on
+    midiManager.sendSysex(output, [0xf0, 0x00, 0x20, 0x29, 0x02, 0x0c, 0x00, 0x00, 0xf7]); // Session layout
+    // Static colour on Session layout: Note On ch1 (0x90), note = pad,
+    // velocity = palette index (device shows its palette colour; vel 0 = off).
     for (let row = 0; row < 8; row++) {
       for (let col = 0; col < 8; col++) {
-        const led = (8 - row) * 10 + (col + 1);
-        const rgb = state.palette[page * 64 + row * 8 + col];
-        specs.push(0x03, led, to7(rgb[0]), to7(rgb[1]), to7(rgb[2]));
+        const note = (8 - row) * 10 + (col + 1);
+        const index = page * 64 + row * 8 + col;
+        output.send([0x90, note, index]);
       }
     }
-    midiManager.sendSysex(output, [0xf0, 0x00, 0x20, 0x29, 0x02, 0x0c, 0x03, ...specs, 0xf7]);
-    setNotice(`Palette ${page ? "64–127" : "0–63"} shown on Launchpad X.`);
+    setNotice(`Palette ${page ? "64–127" : "0–63"} shown on the Session tab (DAW mode).`);
   } catch (error) {
     setNotice(error.message || String(error));
   }
@@ -201,8 +202,9 @@ async function restoreDeviceLayout() {
   try {
     await refreshMidi();
     const output = selectedOutput();
-    midiManager.sendSysex(output, [0xf0, 0x00, 0x20, 0x29, 0x02, 0x0c, 0x0e, 0x00, 0xf7]); // Live mode
-    setNotice("Launchpad X returned to Live mode.");
+    // Revert to Standalone so the device behaves normally again.
+    midiManager.sendSysex(output, [0xf0, 0x00, 0x20, 0x29, 0x02, 0x0c, 0x10, 0x00, 0xf7]); // DAW mode off
+    setNotice("Exited DAW mode (Standalone).");
   } catch (error) {
     setNotice(error.message || String(error));
   }
