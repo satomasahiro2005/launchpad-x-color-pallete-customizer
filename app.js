@@ -61,13 +61,19 @@ const FIXED_PALETTE_TARGETS = [
     kind: "palette-slot",
     label: "B blend",
     description: "Second transpose blend color",
-    slot: 0x25,
+    slot: 0x2d,
   },
 ];
 const SLOT_TARGETS = [
   ...NOTE_ROLES.map((role) => ({ ...role, kind: "note-role" })),
   ...FIXED_PALETTE_TARGETS,
 ];
+const TARGET_DISPLAY_LABELS = {
+  root: "Root note",
+  scale: "In-scale",
+  off: "Out-of-scale",
+  accent: "Accent (pressed)",
+};
 const TOP_PREVIEW_LABELS = ["↑", "↓", "←", "→", "S", "N", "C", "C"];
 const TOP_PREVIEW_TARGETS = [
   "transpose-a-base",
@@ -126,6 +132,10 @@ const elements = {
   syncTransposeCheckbox: document.querySelector("#sync-transpose-checkbox"),
   transposeTargetList: document.querySelector("#transpose-target-list"),
   writeDeviceButton: document.querySelector("#write-device-button"),
+  selectedSwatch: document.querySelector("#selected-swatch"),
+  rgbR: document.querySelector("#rgb-r"),
+  rgbG: document.querySelector("#rgb-g"),
+  rgbB: document.querySelector("#rgb-b"),
 };
 
 const midiManager = createMidiManager({
@@ -234,7 +244,35 @@ function init() {
     });
   });
 
+  [elements.rgbR, elements.rgbG, elements.rgbB].forEach((input) => {
+    input.addEventListener("input", onRgbInput);
+  });
+
   render();
+}
+
+function activePaletteIndex() {
+  return getTargetPaletteIndex(targetById[state.activeTarget]);
+}
+
+function onRgbInput() {
+  const clamp = (value) => Math.max(0, Math.min(63, Math.round(Number(value) || 0)));
+  const index = activePaletteIndex();
+  state.palette[index] = [
+    clamp(elements.rgbR.value),
+    clamp(elements.rgbG.value),
+    clamp(elements.rgbB.value),
+  ];
+  state.paletteDirty = true;
+  render();
+}
+
+function renderColorEditor() {
+  const rgb = state.palette[activePaletteIndex()];
+  elements.selectedSwatch.style.backgroundColor = colorHex(rgb);
+  if (document.activeElement !== elements.rgbR) elements.rgbR.value = rgb[0];
+  if (document.activeElement !== elements.rgbG) elements.rgbG.value = rgb[1];
+  if (document.activeElement !== elements.rgbB) elements.rgbB.value = rgb[2];
 }
 
 function clonePalette(source) {
@@ -279,6 +317,7 @@ function render() {
   renderStatus();
   renderButtons();
   renderActiveSlot();
+  renderColorEditor();
   renderSlots();
   renderPreview();
   renderSelectedPreview();
@@ -324,10 +363,10 @@ function getFirmwareCheckText() {
   if (!state.stockFirmware) return "Not checked";
   if (!state.firmwareInfo) return "OK";
   if (state.firmwareInfo.hash === KNOWN_LPX_422_FIRMWARE_SHA256) {
-    return "OK / official 422";
+    return "Official v2.0.1 ✓";
   }
 
-  return "OK / custom";
+  return "Loaded (custom)";
 }
 
 function renderDeviceSelect() {
@@ -375,7 +414,7 @@ function renderActiveSlot() {
   const index = getTargetPaletteIndex(target);
   const rgb = state.palette[index];
 
-  elements.activeTitle.textContent = target.label;
+  elements.activeTitle.textContent = TARGET_DISPLAY_LABELS[target.id] || target.label;
 
   if (target.kind === "note-role") {
     elements.activeMeta.innerHTML = `
@@ -404,14 +443,24 @@ function renderSlots() {
     const container = getTargetContainer(target);
 
     button.type = "button";
-    button.textContent = `${state.activeTarget === target.id ? "[*]" : "[ ]"} ${target.label}`;
+    button.className =
+      state.activeTarget === target.id ? "border px-2 py-1 font-bold" : "border px-2 py-1";
+
+    const swatch = document.createElement("span");
+    swatch.style.cssText =
+      "display:inline-block;width:12px;height:12px;border:1px solid #000;margin-right:6px;vertical-align:middle;";
+    swatch.style.backgroundColor = colorHex(rgb);
+    button.appendChild(swatch);
+    button.appendChild(
+      document.createTextNode(TARGET_DISPLAY_LABELS[target.id] || target.label)
+    );
+
     button.addEventListener("click", () => {
       state.activeTarget = target.id;
       render();
     });
 
     container.appendChild(button);
-    container.appendChild(document.createTextNode(" "));
   });
 }
 
@@ -435,6 +484,8 @@ function renderPreview() {
       td.width = 24;
       td.height = 24;
       td.align = "center";
+      td.style.borderStyle = "solid";
+      td.style.borderWidth = "2px";
       td.title = preview.title;
       td.textContent = preview.text || (preview.active ? "*" : " ");
       td.dataset.previewKind = preview.kind;
@@ -493,6 +544,8 @@ function renderSelectedPreview() {
   td.width = 24;
   td.height = 24;
   td.align = "center";
+  td.style.borderStyle = "solid";
+  td.style.borderWidth = "2px";
   td.title = preview.title;
   td.textContent = preview.active ? "*" : " ";
   applyPreviewStyle(td, preview);
@@ -532,6 +585,9 @@ function renderPalette() {
       td.width = 24;
       td.height = 24;
       td.align = "center";
+      td.style.borderStyle = "solid";
+      td.style.borderWidth = "1px";
+      td.style.borderColor = "#999999";
       td.bgColor = colorHex(rgb);
       td.title = `0x${toHex(index)} / ${index} / rgb ${rgb.join(" ")}`;
       td.textContent = index === activeIndex ? "*" : usedIndices.has(index) ? "." : " ";
@@ -767,7 +823,7 @@ function getOutputPalette() {
     palette[0x5e] = [...state.palette[state.table.root]];
     palette[0x5f] = [...state.palette[state.table.root]];
     palette[0x24] = [...state.palette[state.table.scale]];
-    palette[0x25] = [...state.palette[state.table.scale]];
+    palette[0x2d] = [...state.palette[state.table.scale]];
   }
 
   return palette;

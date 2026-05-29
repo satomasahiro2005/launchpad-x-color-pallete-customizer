@@ -1,0 +1,24 @@
+/* Minimal, layout-only polish on top of the Tailwind CDN utilities.
+   No rounded corners, gradients, or shadows — structure and legibility only. */
+
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  line-height: 1.4;
+}
+
+/* Grid cells: collapse adjacent borders, monospace markers, clickable. */
+table {
+  border-collapse: collapse;
+}
+
+#preview-grid td,
+#selected-preview td,
+#palette-grid td {
+  font-family: monospace;
+  cursor: pointer;
+}
+
+button,
+summary {
+  cursor: pointer;
+}
