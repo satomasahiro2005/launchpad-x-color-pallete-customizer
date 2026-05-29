@@ -861,29 +861,30 @@ function colorHex([r, g, b]) {
     .padStart(2, "0")}${scale(b).toString(16).padStart(2, "0")}`;
 }
 
-// sRGB opto-electronic transfer function (linear light 0..1 -> sRGB 0..1).
-function srgbEncode(c) {
-  c = Math.min(1, Math.max(0, c));
-  return c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
-}
+// How the raw palette RGB (0-63) actually looks on the Launchpad X's diffused
+// LEDs, as a *measured* mapping. We photographed the full mat1jaczyyy palette on
+// the device (white balance locked at 4000K), sampled all 128 pads, paired each
+// with its raw RGB, and fit a per-output-channel degree-2 polynomial in (r,g,b)
+// by least squares. RMS error ≈ 18/255. Intermediate/edited colours that weren't
+// in the palette are interpolated smoothly by the same polynomial.
+// Terms: [1, r, g, b, r², g², b², r·g, r·b, g·b] with r,g,b in 0..1 -> 0..255.
+const DEVICE_LOOK_COEFFS = {
+  r: [74.684, 267.095, -91.0834, -131.2372, -71.3894, 4.4989, 64.9302, 8.6414, -91.7923, 73.1757],
+  g: [98.0707, -34.1351, 241.2063, -93.419, 4.6467, -83.904, 22.6541, 12.6744, 18.9351, -25.8391],
+  b: [120.4201, -42.1685, 37.83, 289.4604, 24.0533, -8.6481, -212.8166, 4.0847, 20.2838, 5.1289],
+};
 
-// Approximate how the raw palette RGB (0-63) looks on the Launchpad's diffused
-// LEDs. The pad value is treated as the LED's *linear* light output, then
-// properly colour-space converted to sRGB for the screen (this alone makes mids
-// read brighter, like the hardware). A diffuser "bloom" then washes brighter
-// pads toward white, applied in linear light. Colour temperature/white point is
-// not matched — it's a visual guide, not a calibrated profile.
 function deviceColorHex(r, g, b) {
   if (r + g + b === 0) return "#000000"; // an off pad stays off
-  let linear = [r, g, b].map((c) => c / 63); // LED drive ≈ linear radiance
-  const max = Math.max(linear[0], linear[1], linear[2]);
-  // Diffuser/sensor wash toward white — tuned to the washed look sampled from
-  // the 4000K-locked device photos (saturated pads read quite desaturated).
-  const bloom = 0.38 * max + 0.06;
-  linear = linear.map((c) => Math.min(1, c + bloom * (1 - c)));
-  return `#${linear
-    .map((c) => Math.round(srgbEncode(c) * 255).toString(16).padStart(2, "0"))
-    .join("")}`;
+  const x = r / 63, y = g / 63, z = b / 63;
+  const terms = [1, x, y, z, x * x, y * y, z * z, x * y, x * z, y * z];
+  const ch = (w) => {
+    let v = 0;
+    for (let i = 0; i < terms.length; i++) v += terms[i] * w[i];
+    return Math.max(0, Math.min(255, Math.round(v)));
+  };
+  const hex = (v) => v.toString(16).padStart(2, "0");
+  return `#${hex(ch(DEVICE_LOOK_COEFFS.r))}${hex(ch(DEVICE_LOOK_COEFFS.g))}${hex(ch(DEVICE_LOOK_COEFFS.b))}`;
 }
 
 async function refreshMidi() {
