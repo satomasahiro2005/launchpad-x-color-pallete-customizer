@@ -53,7 +53,8 @@ export function createMidiManager({ log }) {
   // Launchpad), so the user can still send to a device if detection missed it.
   function getOutputs() {
     if (!midiAccess) return [];
-    return Array.from(midiAccess.outputs.values());
+    // Skip ports left in the map after unplug (state === "disconnected").
+    return Array.from(midiAccess.outputs.values()).filter((output) => output.state === "connected");
   }
 
   function getState() {
