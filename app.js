@@ -96,6 +96,8 @@ const state = {
   busy: false,
   device: null,
   devices: [],
+  outputs: [],
+  selectedOutputId: null,
   firmwareInfo: null,
   logLines: [],
   noticeText: "Click Refresh MIDI to request MIDI access.",
@@ -171,9 +173,7 @@ function init() {
   });
 
   elements.deviceSelect.addEventListener("change", () => {
-    const index = Number(elements.deviceSelect.value);
-    state.device = Number.isInteger(index) ? state.devices[index] || null : null;
-    renderStatus();
+    state.selectedOutputId = elements.deviceSelect.value || null;
   });
 
   elements.syncTransposeCheckbox.addEventListener("change", () => {
@@ -237,7 +237,12 @@ function init() {
     await withBusy(async () => {
       await refreshMidi();
 
-      const output = findBootloaderOutput();
+      const output = selectedOutput();
+      if (deviceTypeForOutput(output.id) !== "BL_LPX") {
+        appendMidiLog(
+          `note: "${output.name}" isn't a detected bootloader — flashing only works in bootloader mode (hold Capture MIDI while connecting).`
+        );
+      }
       const firmware = await getPatchedFirmware();
       const syx = buildSysexFirmware(firmware);
       appendMidiLog(`flashing ${syx.length} bytes to ${output.name}`);
@@ -259,14 +264,14 @@ function deviceOfType(type) {
   return state.devices.find((device) => device.type === type && device.output) || null;
 }
 
-function findBootloaderOutput() {
-  const bl = deviceOfType("BL_LPX");
-  if (!bl) {
+// The chosen flash target from the device dropdown (any connected output).
+function selectedOutput() {
+  if (!state.outputs.length) {
     throw new Error(
-      "Launchpad X Bootloader was not found. Hold Capture MIDI while connecting the device."
+      "No MIDI output found. Connect the Launchpad X (hold Capture MIDI for bootloader), then Refresh MIDI."
     );
   }
-  return bl.output;
+  return state.outputs.find((output) => output.id === state.selectedOutputId) || state.outputs[0];
 }
 
 // Persist the current colours so the separate "Show on device" page can read
@@ -408,23 +413,43 @@ function getFirmwareCheckText() {
   return "Loaded (custom)";
 }
 
+function deviceTypeForOutput(outputId) {
+  const device = state.devices.find((d) => d.output && d.output.id === outputId);
+  return device ? device.type : null;
+}
+
+// List every connected MIDI output (detection can miss/misclassify the
+// bootloader), annotated with the detected type. Used as the flash target.
 function renderDeviceSelect() {
-  const selectedIndex = state.devices.indexOf(state.device);
+  const list = state.outputs;
   elements.deviceSelect.innerHTML = "";
 
-  if (!state.devices.length) {
+  if (!list.length) {
     const option = document.createElement("option");
     option.value = "";
-    option.textContent = "No MIDI device";
+    option.textContent = "No MIDI output";
     elements.deviceSelect.appendChild(option);
     return;
   }
 
-  state.devices.forEach((device, index) => {
+  if (!list.some((output) => output.id === state.selectedOutputId)) {
+    const bl = state.devices.find((d) => d.type === "BL_LPX" && d.output);
+    const lp = state.devices.find((d) => d.type === "LPX" && d.output);
+    const preferred =
+      (bl && bl.output) ||
+      (lp && lp.output) ||
+      list.find((o) => /bootloader|lpx|launchpad/i.test(o.name || "")) ||
+      list[0];
+    state.selectedOutputId = preferred.id;
+  }
+
+  list.forEach((output) => {
+    const type = deviceTypeForOutput(output.id);
+    const tag = type === "BL_LPX" ? " (bootloader)" : type === "LPX" ? " (Launchpad)" : "";
     const option = document.createElement("option");
-    option.value = String(index);
-    option.textContent = `${device.type} - ${device.output.name || "unnamed output"}`;
-    option.selected = index === selectedIndex;
+    option.value = output.id;
+    option.textContent = `${output.name || "MIDI output"}${tag}`;
+    option.selected = output.id === state.selectedOutputId;
     elements.deviceSelect.appendChild(option);
   });
 }
@@ -838,6 +863,7 @@ async function refreshMidi() {
   try {
     state.device = await midiManager.refresh();
     state.devices = midiManager.getDevices();
+    state.outputs = midiManager.getOutputs();
     renderStatus();
 
     if (state.device) {
