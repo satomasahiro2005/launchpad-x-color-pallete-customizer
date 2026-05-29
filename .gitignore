@@ -3,3 +3,12 @@ server.err.log
 firmware/
 *.syx
 *.bin
+
+# Reverse-engineering work artifacts (firmware images + disassembly)
+work/
+*.elf
+*.lst
+*.asm
+*.dis
+*.disasm
+*.objdump
