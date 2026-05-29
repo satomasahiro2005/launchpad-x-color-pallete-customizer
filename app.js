@@ -178,6 +178,10 @@ function init() {
 
   elements.syncTransposeCheckbox.addEventListener("change", () => {
     state.syncTranspose = elements.syncTransposeCheckbox.checked;
+    // Synced transpose targets are not editable, so don't leave one selected.
+    if (state.syncTranspose && state.activeTarget.startsWith("transpose-")) {
+      state.activeTarget = "root";
+    }
     appendAppLog(
       state.syncTranspose
         ? "transpose sync enabled"
@@ -271,8 +275,13 @@ function onRgbInput() {
 }
 
 function renderColorEditor() {
+  const target = targetById[state.activeTarget];
+  const synced = state.syncTranspose && target.id.startsWith("transpose-");
   const rgb = state.palette[activePaletteIndex()];
   elements.selectedSwatch.style.backgroundColor = colorHex(rgb);
+  [elements.rgbR, elements.rgbG, elements.rgbB].forEach((el) => {
+    el.disabled = synced;
+  });
   if (document.activeElement !== elements.rgbR) elements.rgbR.value = rgb[0];
   if (document.activeElement !== elements.rgbG) elements.rgbG.value = rgb[1];
   if (document.activeElement !== elements.rgbB) elements.rgbB.value = rgb[2];
@@ -439,13 +448,17 @@ function renderSlots() {
   elements.transposeTargetList.innerHTML = "";
   elements.modeTargetList.innerHTML = "";
 
+  const outPalette = getOutputPalette();
+
   SLOT_TARGETS.forEach((target) => {
+    const synced = state.syncTranspose && target.id.startsWith("transpose-");
     const index = getTargetPaletteIndex(target);
-    const rgb = state.palette[index];
+    const rgb = outPalette[index];
     const button = document.createElement("button");
     const container = getTargetContainer(target);
 
     button.type = "button";
+    button.disabled = synced;
     button.className =
       state.activeTarget === target.id ? "border px-2 py-1 font-bold" : "border px-2 py-1";
 
@@ -454,14 +467,17 @@ function renderSlots() {
       "display:inline-block;width:12px;height:12px;border:1px solid #000;margin-right:6px;vertical-align:middle;";
     swatch.style.backgroundColor = colorHex(rgb);
     button.appendChild(swatch);
-    button.appendChild(
-      document.createTextNode(TARGET_DISPLAY_LABELS[target.id] || target.label)
-    );
 
-    button.addEventListener("click", () => {
-      state.activeTarget = target.id;
-      render();
-    });
+    let label = TARGET_DISPLAY_LABELS[target.id] || target.label;
+    if (synced) label += target.id.startsWith("transpose-a") ? " (= Root)" : " (= Scale)";
+    button.appendChild(document.createTextNode(label));
+
+    if (!synced) {
+      button.addEventListener("click", () => {
+        state.activeTarget = target.id;
+        render();
+      });
+    }
 
     container.appendChild(button);
   });
