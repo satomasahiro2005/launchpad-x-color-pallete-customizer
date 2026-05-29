@@ -1,9 +1,9 @@
 # LaunchPad X Color Pallete Customizer
 
-Minimal browser tool for editing Launchpad X firmware 4.2.2 color references.
+Minimal browser tool for editing Launchpad X firmware v2.0.1 color references.
 
 This repository does not include Novation firmware binaries or SysEx files. Load
-your own official 4.2.2 `.syx` or decoded `.bin` file in the browser, patch it
+your own official v2.0.1 `.syx` or decoded `.bin` file in the browser, patch it
 locally, then download or write the patched SysEx.
 
 See [FIRMWARE_422.md](./FIRMWARE_422.md) for the exact binary offsets and patch
@@ -13,7 +13,7 @@ behavior.
 
 This project is inspired by
 [mat1jaczyyy/LP-Firmware-Utility](https://github.com/mat1jaczyyy/LP-Firmware-Utility).
-This app is a separate, minimal implementation focused on Launchpad X 4.2.2
+This app is a separate, minimal implementation focused on Launchpad X v2.0.1
 palette and Note mode color patching.
 
 ## Firmware Source
