@@ -863,15 +863,17 @@ function colorHex([r, g, b]) {
 
 // How the raw palette RGB (0-63) actually looks on the Launchpad X's diffused
 // LEDs, as a *measured* mapping. We photographed the full mat1jaczyyy palette on
-// the device (white balance locked at 4000K), sampled all 128 pads, paired each
-// with its raw RGB, and fit a per-output-channel degree-2 polynomial in (r,g,b)
-// by least squares. RMS error ≈ 18/255. Intermediate/edited colours that weren't
-// in the palette are interpolated smoothly by the same polynomial.
+// the device, sampled all 128 pads, and paired each with its raw RGB. The camera
+// white balance (locked 4000K) left a blue cast, so we white-balanced the samples
+// in linear light using the neutral gray ramp (idx 121-127) as reference
+// (gains R×2.05, B×0.34), then fit a per-output-channel degree-2 polynomial in
+// (r,g,b) by least squares (RMS ≈ 19/255). Intermediate/edited colours that
+// weren't in the palette are interpolated smoothly by the same polynomial.
 // Terms: [1, r, g, b, r², g², b², r·g, r·b, g·b] with r,g,b in 0..1 -> 0..255.
 const DEVICE_LOOK_COEFFS = {
-  r: [74.684, 267.095, -91.0834, -131.2372, -71.3894, 4.4989, 64.9302, 8.6414, -91.7923, 73.1757],
+  r: [99.5801, 344.1962, -110.2856, -141.8236, -127.0472, 1.5492, 58.6233, 41.84, -79.3891, 66.5508],
   g: [98.0707, -34.1351, 241.2063, -93.419, 4.6467, -83.904, 22.6541, 12.6744, 18.9351, -25.8391],
-  b: [120.4201, -42.1685, 37.83, 289.4604, 24.0533, -8.6481, -212.8166, 4.0847, 20.2838, 5.1289],
+  b: [71.6676, -26.705, 24.4319, 185.2134, 15.1184, -5.5764, -136.1814, 2.5325, 13.1239, 2.8686],
 };
 
 function deviceColorHex(r, g, b) {
