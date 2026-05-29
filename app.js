@@ -139,6 +139,9 @@ const elements = {
   rgbR: document.querySelector("#rgb-r"),
   rgbG: document.querySelector("#rgb-g"),
   rgbB: document.querySelector("#rgb-b"),
+  showPalette0Button: document.querySelector("#show-palette-0-button"),
+  showPalette1Button: document.querySelector("#show-palette-1-button"),
+  deviceRestoreButton: document.querySelector("#device-restore-button"),
 };
 
 const midiManager = createMidiManager({
@@ -255,7 +258,56 @@ function init() {
     input.addEventListener("input", onRgbInput);
   });
 
+  elements.showPalette0Button.addEventListener("click", () => showPaletteOnDevice(0));
+  elements.showPalette1Button.addEventListener("click", () => showPaletteOnDevice(1));
+  elements.deviceRestoreButton.addEventListener("click", restoreDeviceLayout);
+
   render();
+}
+
+// Light the whole palette on a connected Launchpad X (normal mode) via
+// Programmer-layout RGB lighting: 8x8 pads per page, page 0 = idx 0-63,
+// page 1 = idx 64-127. Shows the app's current colours (channels 0-63 -> 0-127).
+function findLpxOutput() {
+  const lpx = state.devices.find((device) => device.type === "LPX" && device.output);
+  if (!lpx) {
+    throw new Error(
+      "Launchpad X (normal mode) not found. Use the device normally (not bootloader), then try again."
+    );
+  }
+  return lpx.output;
+}
+
+function showPaletteOnDevice(page) {
+  return withBusy(async () => {
+    await refreshMidi();
+    const output = findLpxOutput();
+    // enter Programmer layout (full-grid lighting)
+    midiManager.sendSysex(output, [0xf0, 0x00, 0x20, 0x29, 0x02, 0x0c, 0x00, 0x7f, 0xf7]);
+
+    const palette = getOutputPalette();
+    const to7 = (channel) => Math.min(127, channel * 2);
+    const specs = [];
+    for (let row = 0; row < 8; row++) {
+      for (let col = 0; col < 8; col++) {
+        const led = (8 - row) * 10 + (col + 1); // Programmer numbering, top->down
+        const rgb = palette[page * 64 + row * 8 + col];
+        specs.push(0x03, led, to7(rgb[0]), to7(rgb[1]), to7(rgb[2]));
+      }
+    }
+    midiManager.sendSysex(output, [0xf0, 0x00, 0x20, 0x29, 0x02, 0x0c, 0x03, ...specs, 0xf7]);
+    setNotice(`Palette ${page ? "64–127" : "0–63"} shown on Launchpad X.`);
+  });
+}
+
+function restoreDeviceLayout() {
+  return withBusy(async () => {
+    await refreshMidi();
+    const output = findLpxOutput();
+    // back to Session layout
+    midiManager.sendSysex(output, [0xf0, 0x00, 0x20, 0x29, 0x02, 0x0c, 0x00, 0x00, 0xf7]);
+    setNotice("Launchpad X returned to Session layout.");
+  });
 }
 
 function activePaletteIndex() {
@@ -420,6 +472,9 @@ function renderButtons() {
     elements.importPaletteButton,
     elements.readFirmwareButton,
     elements.refreshMidiButton,
+    elements.showPalette0Button,
+    elements.showPalette1Button,
+    elements.deviceRestoreButton,
   ].forEach((button) => {
     button.disabled = disabled;
   });

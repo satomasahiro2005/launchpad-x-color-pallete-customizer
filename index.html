@@ -123,6 +123,15 @@
           <button id="write-device-button" type="button" class="border px-2 py-1">Write firmware</button>
         </div>
         <p class="text-sm">Write only when the Launchpad X is in bootloader mode (hold Capture MIDI while connecting).</p>
+
+        <div class="flex flex-wrap items-center gap-3">
+          <h2 class="mr-auto font-bold">Show on device</h2>
+          <button id="show-palette-0-button" type="button" class="border px-2 py-1">Palette 0–63</button>
+          <button id="show-palette-1-button" type="button" class="border px-2 py-1">Palette 64–127</button>
+          <button id="device-restore-button" type="button" class="border px-2 py-1">Back to Live</button>
+        </div>
+        <p class="text-sm">Lights the whole palette on a connected Launchpad X (normal mode, not bootloader) via Programmer mode — 8×8 per page, shows the app's current colours.</p>
+
         <details>
           <summary class="cursor-pointer text-sm font-bold">Logs</summary>
           <textarea id="notice" rows="12" readonly class="mt-2 w-full border p-2 font-mono text-xs"></textarea>

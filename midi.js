@@ -56,6 +56,11 @@ export function createMidiManager({ log }) {
     };
   }
 
+  function sendSysex(output, bytes) {
+    appendLog(`sysex out: ${bytes.length} bytes to ${output.name || "output"}`);
+    output.send(bytes);
+  }
+
   async function flashToDevice(output, syx) {
     const messages = splitSysexMessages(syx);
     appendLog(`prepared ${messages.length} sysex messages`);
@@ -133,6 +138,7 @@ export function createMidiManager({ log }) {
     getDevices,
     getState,
     refresh,
+    sendSysex,
   };
 }
 
