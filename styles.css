@@ -1,24 +1,53 @@
-/* Minimal, layout-only polish on top of the Tailwind CDN utilities.
-   No rounded corners, gradients, or shadows — structure and legibility only. */
+/* Layout-only polish on top of the Tailwind CDN utilities.
+   No rounded corners, gradients, or shadows — structure and legibility only.
+   Cell fill colours are set inline by app.js; grid framing/sizing lives here. */
 
 body {
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   line-height: 1.4;
 }
 
-/* Grid cells: collapse adjacent borders, monospace markers, clickable. */
-table {
-  border-collapse: collapse;
-}
-
-#preview-grid td,
-#selected-preview td,
-#palette-grid td {
-  font-family: monospace;
+button,
+summary {
   cursor: pointer;
 }
 
-button,
-summary {
+/* Device preview ("the Launchpad"): pads separated by a grey frame so that
+   black pads (palette 0) and the dark-grey control frame stay distinguishable. */
+#preview-grid,
+#selected-preview {
+  border-collapse: separate;
+  border-spacing: 3px;
+  background: #8a8a8a;
+  padding: 4px;
+}
+
+#preview-grid td,
+#selected-preview td {
+  width: 26px;
+  height: 26px;
+  text-align: center;
+  vertical-align: middle;
+  font-family: monospace;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* Palette: 16×8 swatches separated by thin grey gridlines. */
+#palette-grid {
+  border-collapse: separate;
+  border-spacing: 1px;
+  background: #9a9a9a;
+}
+
+#palette-grid td {
+  width: 22px;
+  height: 22px;
+  text-align: center;
+  vertical-align: middle;
+  font-family: monospace;
+  font-size: 9px;
+  line-height: 1;
   cursor: pointer;
 }

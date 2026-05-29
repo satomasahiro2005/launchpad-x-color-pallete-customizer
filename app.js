@@ -13,6 +13,9 @@ import {
 import { createMidiManager } from "./midi.js";
 
 const SCALE_NOTES = new Set([0, 2, 4, 5, 7, 9, 11]);
+// Fill for cells outside the 8x8 (top controls, scene column, logo). Dark grey
+// rather than black so they stay visible next to palette-0 (black) note pads.
+const SURFACE_BG = "#2b2b2b";
 const FIXED_PALETTE_TARGETS = [
   {
     id: "tab-disabled",
@@ -484,8 +487,6 @@ function renderPreview() {
       td.width = 24;
       td.height = 24;
       td.align = "center";
-      td.style.borderStyle = "solid";
-      td.style.borderWidth = "2px";
       td.title = preview.title;
       td.textContent = preview.text || (preview.active ? "*" : " ");
       td.dataset.previewKind = preview.kind;
@@ -544,8 +545,6 @@ function renderSelectedPreview() {
   td.width = 24;
   td.height = 24;
   td.align = "center";
-  td.style.borderStyle = "solid";
-  td.style.borderWidth = "2px";
   td.title = preview.title;
   td.textContent = preview.active ? "*" : " ";
   applyPreviewStyle(td, preview);
@@ -585,9 +584,6 @@ function renderPalette() {
       td.width = 24;
       td.height = 24;
       td.align = "center";
-      td.style.borderStyle = "solid";
-      td.style.borderWidth = "1px";
-      td.style.borderColor = "#999999";
       td.bgColor = colorHex(rgb);
       td.title = `0x${toHex(index)} / ${index} / rgb ${rgb.join(" ")}`;
       td.textContent = index === activeIndex ? "*" : usedIndices.has(index) ? "." : " ";
@@ -711,16 +707,14 @@ function emptyPreviewCell() {
 }
 
 function applyPreviewStyle(td, preview) {
-  td.style.backgroundColor = preview.kind === "note" ? preview.color : "#000000";
+  td.style.backgroundColor = preview.kind === "note" ? preview.color : SURFACE_BG;
   td.style.color = preview.kind === "note" ? "#ffffff" : preview.color;
-  td.style.borderColor = preview.kind === "logo" ? "#000000" : preview.color;
 }
 
 function applyPreviewHoverStyle(td, preview) {
   const accent = colorHex(getOutputPalette()[state.table.accent]);
-  td.style.backgroundColor = preview.kind === "note" ? accent : "#000000";
+  td.style.backgroundColor = preview.kind === "note" ? accent : SURFACE_BG;
   td.style.color = preview.kind === "note" ? "#ffffff" : accent;
-  td.style.borderColor = accent;
 }
 
 function applyPushedPitchStyle(pitch) {
