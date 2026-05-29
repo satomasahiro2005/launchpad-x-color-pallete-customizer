@@ -179,7 +179,7 @@ function init() {
   elements.syncTransposeCheckbox.addEventListener("change", () => {
     state.syncTranspose = elements.syncTransposeCheckbox.checked;
     // Synced transpose targets are not editable, so don't leave one selected.
-    if (state.syncTranspose && state.activeTarget.startsWith("transpose-")) {
+    if (isSyncedTransposeBase(state.activeTarget)) {
       state.activeTarget = "root";
     }
     appendAppLog(
@@ -274,9 +274,15 @@ function onRgbInput() {
   render();
 }
 
+function isSyncedTransposeBase(id) {
+  // Only the transpose BASE colours follow the note colours on sync; the blend
+  // slots (0x5f / 0x2d) are left untouched and stay editable.
+  return state.syncTranspose && (id === "transpose-a-base" || id === "transpose-b-base");
+}
+
 function renderColorEditor() {
   const target = targetById[state.activeTarget];
-  const synced = state.syncTranspose && target.id.startsWith("transpose-");
+  const synced = isSyncedTransposeBase(target.id);
   const rgb = state.palette[activePaletteIndex()];
   elements.selectedSwatch.style.backgroundColor = colorHex(rgb);
   [elements.rgbR, elements.rgbG, elements.rgbB].forEach((el) => {
@@ -439,7 +445,7 @@ function renderActiveSlot() {
   elements.activeMeta.innerHTML = `
     <div>slot 0x${toHex(index)} / ${index}</div>
     <div>rgb ${rgb[0]} ${rgb[1]} ${rgb[2]}</div>
-    <div>${target.id.startsWith("transpose-") && state.syncTranspose ? "sync on" : ""}</div>
+    <div>${isSyncedTransposeBase(target.id) ? "sync on" : ""}</div>
   `;
 }
 
@@ -451,7 +457,7 @@ function renderSlots() {
   const outPalette = getOutputPalette();
 
   SLOT_TARGETS.forEach((target) => {
-    const synced = state.syncTranspose && target.id.startsWith("transpose-");
+    const synced = isSyncedTransposeBase(target.id);
     const index = getTargetPaletteIndex(target);
     const rgb = outPalette[index];
     const button = document.createElement("button");
@@ -840,10 +846,10 @@ function getOutputPalette() {
   const palette = clonePalette(state.palette);
 
   if (state.syncTranspose) {
+    // Sync only the transpose base colours; leave the blend slots (0x5f / 0x2d)
+    // as the user / stock set them.
     palette[0x5e] = [...state.palette[state.table.root]];
-    palette[0x5f] = [...state.palette[state.table.root]];
     palette[0x24] = [...state.palette[state.table.scale]];
-    palette[0x2d] = [...state.palette[state.table.scale]];
   }
 
   return palette;
