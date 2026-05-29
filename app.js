@@ -1,7 +1,6 @@
 import {
   DEFAULT_NOTE_TABLE,
   DEFAULT_PALETTE,
-  NOTE_ROLES,
   buildPatchedFirmware,
   buildSysexFirmware,
   extractNoteTable,
@@ -11,83 +10,26 @@ import {
   toHex,
 } from "./firmware.js";
 import { createMidiManager } from "./midi.js";
+import { DEVICE_BEZEL, deviceColorHex, deviceGlow } from "./devicelook.js";
+import {
+  FIXED_PALETTE_TARGETS,
+  SLOT_TARGETS,
+  targetById,
+  TARGET_DISPLAY_LABELS,
+  TOP_PREVIEW_LABELS,
+  TOP_PREVIEW_TARGETS,
+  getGridPitch,
+  getGridRole,
+  getGridPitchCount,
+  getFirstGridCellForPitch,
+  getTargetPaletteIndex as getTargetPaletteIndexPure,
+  isSyncedTransposeBase as isSyncedTransposeBasePure,
+  getOutputPalette as getOutputPalettePure,
+} from "./editor-logic.js";
 
-const SCALE_NOTES = new Set([0, 2, 4, 5, 7, 9, 11]);
 // Fill for cells outside the 8x8 (top controls, scene column, logo). Dark grey
 // rather than black so they stay visible next to palette-0 (black) note pads.
 const SURFACE_BG = "#2b2b2b";
-const FIXED_PALETTE_TARGETS = [
-  {
-    id: "tab-disabled",
-    kind: "palette-slot",
-    label: "Tab disabled",
-    description: "Mode button off/disabled (0x00, per disassembly)",
-    slot: 0x00,
-  },
-  {
-    id: "tab-idle",
-    kind: "palette-slot",
-    label: "Tab idle",
-    description: "Mode button idle/unselected (0x01, dim)",
-    slot: 0x01,
-  },
-  {
-    id: "tab-selected",
-    kind: "palette-slot",
-    label: "Tab selected",
-    description: "Mode button selected/lit (0x1C, green)",
-    slot: 0x1c,
-  },
-  {
-    id: "transpose-a-base",
-    kind: "palette-slot",
-    label: "A base",
-    description: "First transpose color",
-    slot: 0x5e,
-  },
-  {
-    id: "transpose-a-blend",
-    kind: "palette-slot",
-    label: "A blend",
-    description: "First transpose blend color",
-    slot: 0x5f,
-  },
-  {
-    id: "transpose-b-base",
-    kind: "palette-slot",
-    label: "B base",
-    description: "Second transpose color",
-    slot: 0x24,
-  },
-  {
-    id: "transpose-b-blend",
-    kind: "palette-slot",
-    label: "B blend",
-    description: "Second transpose blend color",
-    slot: 0x2d,
-  },
-];
-const SLOT_TARGETS = [
-  ...NOTE_ROLES.map((role) => ({ ...role, kind: "note-role" })),
-  ...FIXED_PALETTE_TARGETS,
-];
-const TARGET_DISPLAY_LABELS = {
-  root: "Root note",
-  scale: "In-scale",
-  off: "Out-of-scale",
-  accent: "Accent (pressed)",
-};
-const TOP_PREVIEW_LABELS = ["↑", "↓", "←", "→", "S", "N", "C", "C"];
-const TOP_PREVIEW_TARGETS = [
-  "transpose-a-base",
-  "transpose-a-blend",
-  "transpose-b-base",
-  "transpose-b-blend",
-  "menu-disabled",
-  "tab-selected", // Note mode is the active mode in this preview
-  "tab-idle",
-  "tab-idle",
-];
 const KNOWN_LPX_422_FIRMWARE_SHA256 =
   "9cbb359292aeb93affc50d9b6a7b80449e034686927fc5e2e5f6572cf3ddee8e";
 
@@ -109,9 +51,17 @@ const state = {
   table: { ...DEFAULT_NOTE_TABLE },
 };
 
-const targetById = Object.fromEntries(
-  SLOT_TARGETS.map((target) => [target.id, target])
-);
+// State-bound wrappers around the pure editor-logic helpers, so call sites stay
+// simple. The pure versions (…Pure) are unit-tested in test/editor-logic.test.mjs.
+function isSyncedTransposeBase(id) {
+  return isSyncedTransposeBasePure(id, state.syncTranspose);
+}
+function getTargetPaletteIndex(target) {
+  return getTargetPaletteIndexPure(target, state.table);
+}
+function getOutputPalette() {
+  return getOutputPalettePure(state.palette, state.table, state.syncTranspose);
+}
 
 const elements = {
   activeMeta: document.querySelector("#active-meta"),
@@ -305,12 +255,6 @@ function onRgbInput() {
   ];
   state.paletteDirty = true;
   render();
-}
-
-function isSyncedTransposeBase(id) {
-  // Only the transpose BASE colours follow the note colours on sync; the blend
-  // slots (0x5f / 0x2d) are left untouched and stay editable.
-  return state.syncTranspose && (id === "transpose-a-base" || id === "transpose-b-base");
 }
 
 function renderColorEditor() {
@@ -550,6 +494,7 @@ function getTargetContainer(target) {
 
 function renderPreview() {
   elements.previewGrid.innerHTML = "";
+  elements.previewGrid.style.background = state.deviceLook ? DEVICE_BEZEL : "";
   const tbody = document.createElement("tbody");
 
   for (let row = 0; row < 9; row++) {
@@ -612,6 +557,7 @@ function renderSelectedPreview() {
   const preview = {
     active: state.activeTarget === "accent",
     color: colorHex(getOutputPalette()[state.table.accent]),
+    rgb: getOutputPalette()[state.table.accent],
     empty: false,
     kind: "note",
     targetId: "accent",
@@ -642,6 +588,7 @@ function renderSelectedPreview() {
 
 function renderPalette() {
   elements.paletteGrid.innerHTML = "";
+  elements.paletteGrid.style.background = state.deviceLook ? DEVICE_BEZEL : "";
   const tbody = document.createElement("tbody");
   const usedIndices = new Set([
     ...Object.values(state.table),
@@ -661,7 +608,7 @@ function renderPalette() {
       td.width = 24;
       td.height = 24;
       td.align = "center";
-      td.bgColor = colorHex(rgb);
+      td.style.background = cellFill(rgb);
       td.title = `0x${toHex(index)} / ${index} / rgb ${rgb.join(" ")}`;
       td.textContent = usedIndices.has(index) ? "." : "";
       if (index === activeIndex) {
@@ -693,27 +640,6 @@ function renderPalette() {
   elements.paletteGrid.appendChild(tbody);
 }
 
-function getGridPitch(x, y) {
-  return x + (7 - y) * 5;
-}
-
-function getGridRole(x, y) {
-  const note = getGridPitch(x, y);
-  const pitchClass = ((note % 12) + 12) % 12;
-
-  if (pitchClass === 0) return "root";
-  if (SCALE_NOTES.has(pitchClass)) return "scale";
-  return "off";
-}
-
-function getTargetPaletteIndex(target) {
-  if (target.kind === "note-role") {
-    return state.table[target.id];
-  }
-
-  return target.slot;
-}
-
 function getPreviewCell(col, row) {
   if (row === 0 && col === 8) {
     return {
@@ -743,6 +669,7 @@ function getPreviewCell(col, row) {
   return {
     active: state.activeTarget === role,
     color: colorHex(getOutputPalette()[state.table[role]]),
+    rgb: getOutputPalette()[state.table[role]],
     empty: false,
     kind: "note",
     pitch,
@@ -769,6 +696,7 @@ function surfacePreviewCell(targetId, text = "") {
   return {
     active: state.activeTarget === targetId,
     color: colorHex(getOutputPalette()[index]),
+    rgb: getOutputPalette()[index],
     empty: false,
     kind: "surface",
     targetId,
@@ -790,27 +718,43 @@ function emptyPreviewCell() {
 
 function applyPreviewStyle(td, preview) {
   if (preview.kind === "note") {
-    td.style.backgroundColor = preview.color;
+    td.style.background = state.deviceLook && preview.rgb ? deviceGlow(preview.rgb) : preview.color;
     td.style.color = "#ffffff";
+    td.style.boxShadow = "";
     return;
   }
-  td.style.backgroundColor = SURFACE_BG;
-  // logo/disabled cells have no meaningful colour — keep their label readable.
-  td.style.color = preview.kind === "logo" ? "#888888" : preview.color;
+  if (preview.kind === "surface") {
+    // mode tab / transpose buttons are black-printed surfaces: the body stays
+    // dark; only the label text and an inset border take the model colour.
+    td.style.background = state.deviceLook ? DEVICE_BEZEL : SURFACE_BG;
+    td.style.color = preview.color;
+    td.style.boxShadow = `inset 0 0 0 2px ${preview.color}`;
+    return;
+  }
+  // logo/disabled cells have no meaningful colour — dark frame, readable label.
+  td.style.background = state.deviceLook ? DEVICE_BEZEL : SURFACE_BG;
+  td.style.color = "#888888";
+  td.style.boxShadow = "";
 }
 
 function applyPreviewHoverStyle(td, preview) {
-  const accent = colorHex(getOutputPalette()[state.table.accent]);
-  td.style.backgroundColor = preview.kind === "note" ? accent : SURFACE_BG;
-  td.style.color = preview.kind === "note" ? "#ffffff" : accent;
+  const accentRgb = getOutputPalette()[state.table.accent];
+  if (preview.kind === "note") {
+    td.style.background = cellFill(accentRgb);
+    td.style.color = "#ffffff";
+  } else {
+    td.style.background = state.deviceLook ? DEVICE_BEZEL : SURFACE_BG;
+    td.style.color = colorHex(accentRgb);
+  }
 }
 
 function applyPushedPitchStyle(pitch) {
-  const accent = colorHex(getOutputPalette()[state.table.accent]);
+  const accentRgb = getOutputPalette()[state.table.accent];
+  const accent = colorHex(accentRgb);
   elements.previewGrid
     .querySelectorAll(`td[data-preview-kind="note"][data-pitch="${pitch}"]`)
     .forEach((td) => {
-      td.style.backgroundColor = accent;
+      td.style.background = cellFill(accentRgb);
       td.style.color = "#ffffff";
       td.style.borderColor = accent;
     });
@@ -825,32 +769,11 @@ function resetPreviewNoteStyles() {
       const role = getGridRole(x, y);
       const preview = {
         color: colorHex(getOutputPalette()[state.table[role]]),
+        rgb: getOutputPalette()[state.table[role]],
         kind: "note",
       };
       applyPreviewStyle(td, preview);
     });
-}
-
-function getGridPitchCount(pitch) {
-  let count = 0;
-
-  for (let y = 0; y < 8; y++) {
-    for (let x = 0; x < 8; x++) {
-      if (getGridPitch(x, y) === pitch) count++;
-    }
-  }
-
-  return count;
-}
-
-function getFirstGridCellForPitch(pitch) {
-  for (let y = 0; y < 8; y++) {
-    for (let x = 0; x < 8; x++) {
-      if (getGridPitch(x, y) === pitch) return { x, y };
-    }
-  }
-
-  return { x: 0, y: 7 };
 }
 
 function colorHex([r, g, b]) {
@@ -861,32 +784,9 @@ function colorHex([r, g, b]) {
     .padStart(2, "0")}${scale(b).toString(16).padStart(2, "0")}`;
 }
 
-// How the raw palette RGB (0-63) actually looks on the Launchpad X's diffused
-// LEDs, as a *measured* mapping. We photographed the full mat1jaczyyy palette on
-// the device, sampled all 128 pads, and paired each with its raw RGB. The camera
-// white balance (locked 4000K) left a blue cast, so we white-balanced the samples
-// in linear light using the neutral gray ramp (idx 121-127) as reference
-// (gains R×2.05, B×0.34), then fit a per-output-channel degree-2 polynomial in
-// (r,g,b) by least squares (RMS ≈ 19/255). Intermediate/edited colours that
-// weren't in the palette are interpolated smoothly by the same polynomial.
-// Terms: [1, r, g, b, r², g², b², r·g, r·b, g·b] with r,g,b in 0..1 -> 0..255.
-const DEVICE_LOOK_COEFFS = {
-  r: [99.5801, 344.1962, -110.2856, -141.8236, -127.0472, 1.5492, 58.6233, 41.84, -79.3891, 66.5508],
-  g: [98.0707, -34.1351, 241.2063, -93.419, 4.6467, -83.904, 22.6541, 12.6744, 18.9351, -25.8391],
-  b: [71.6676, -26.705, 24.4319, 185.2134, 15.1184, -5.5764, -136.1814, 2.5325, 13.1239, 2.8686],
-};
-
-function deviceColorHex(r, g, b) {
-  if (r + g + b === 0) return "#000000"; // an off pad stays off
-  const x = r / 63, y = g / 63, z = b / 63;
-  const terms = [1, x, y, z, x * x, y * y, z * z, x * y, x * z, y * z];
-  const ch = (w) => {
-    let v = 0;
-    for (let i = 0; i < terms.length; i++) v += terms[i] * w[i];
-    return Math.max(0, Math.min(255, Math.round(v)));
-  };
-  const hex = (v) => v.toString(16).padStart(2, "0");
-  return `#${hex(ch(DEVICE_LOOK_COEFFS.r))}${hex(ch(DEVICE_LOOK_COEFFS.g))}${hex(ch(DEVICE_LOOK_COEFFS.b))}`;
+// Cell fill: glow gradient under device-look, otherwise a solid colour.
+function cellFill(rgb) {
+  return state.deviceLook ? deviceGlow(rgb) : colorHex(rgb);
 }
 
 async function refreshMidi() {
@@ -926,19 +826,6 @@ async function getPatchedFirmware() {
     table: state.table,
     palette: getOutputPalette(),
   });
-}
-
-function getOutputPalette() {
-  const palette = clonePalette(state.palette);
-
-  if (state.syncTranspose) {
-    // Sync only the transpose base colours; leave the blend slots (0x5f / 0x2d)
-    // as the user / stock set them.
-    palette[0x5e] = [...state.palette[state.table.root]];
-    palette[0x24] = [...state.palette[state.table.scale]];
-  }
-
-  return palette;
 }
 
 function downloadBlob(filename, blob) {
