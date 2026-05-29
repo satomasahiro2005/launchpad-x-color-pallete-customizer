@@ -105,6 +105,7 @@ const state = {
   paletteDirty: false,
   stockFirmware: null,
   syncTranspose: false,
+  deviceLook: false,
   table: { ...DEFAULT_NOTE_TABLE },
 };
 
@@ -141,6 +142,7 @@ const elements = {
   rgbR: document.querySelector("#rgb-r"),
   rgbG: document.querySelector("#rgb-g"),
   rgbB: document.querySelector("#rgb-b"),
+  deviceLookCheckbox: document.querySelector("#device-look-checkbox"),
 };
 
 const midiManager = createMidiManager({
@@ -253,6 +255,11 @@ function init() {
 
   [elements.rgbR, elements.rgbG, elements.rgbB].forEach((input) => {
     input.addEventListener("input", onRgbInput);
+  });
+
+  elements.deviceLookCheckbox.addEventListener("change", () => {
+    state.deviceLook = elements.deviceLookCheckbox.checked;
+    render();
   });
 
   render();
@@ -847,10 +854,39 @@ function getFirstGridCellForPitch(pitch) {
 }
 
 function colorHex([r, g, b]) {
+  if (state.deviceLook) return deviceColorHex(r, g, b);
   const scale = (channel) => Math.min(255, Math.round(channel * 4));
   return `#${scale(r).toString(16).padStart(2, "0")}${scale(g)
     .toString(16)
     .padStart(2, "0")}${scale(b).toString(16).padStart(2, "0")}`;
+}
+
+// How the raw palette RGB (0-63) actually looks on the Launchpad X's diffused
+// LEDs, as a *measured* mapping. We photographed the full mat1jaczyyy palette on
+// the device, sampled all 128 pads, and paired each with its raw RGB. The camera
+// white balance (locked 4000K) left a blue cast, so we white-balanced the samples
+// in linear light using the neutral gray ramp (idx 121-127) as reference
+// (gains R×2.05, B×0.34), then fit a per-output-channel degree-2 polynomial in
+// (r,g,b) by least squares (RMS ≈ 19/255). Intermediate/edited colours that
+// weren't in the palette are interpolated smoothly by the same polynomial.
+// Terms: [1, r, g, b, r², g², b², r·g, r·b, g·b] with r,g,b in 0..1 -> 0..255.
+const DEVICE_LOOK_COEFFS = {
+  r: [99.5801, 344.1962, -110.2856, -141.8236, -127.0472, 1.5492, 58.6233, 41.84, -79.3891, 66.5508],
+  g: [98.0707, -34.1351, 241.2063, -93.419, 4.6467, -83.904, 22.6541, 12.6744, 18.9351, -25.8391],
+  b: [71.6676, -26.705, 24.4319, 185.2134, 15.1184, -5.5764, -136.1814, 2.5325, 13.1239, 2.8686],
+};
+
+function deviceColorHex(r, g, b) {
+  if (r + g + b === 0) return "#000000"; // an off pad stays off
+  const x = r / 63, y = g / 63, z = b / 63;
+  const terms = [1, x, y, z, x * x, y * y, z * z, x * y, x * z, y * z];
+  const ch = (w) => {
+    let v = 0;
+    for (let i = 0; i < terms.length; i++) v += terms[i] * w[i];
+    return Math.max(0, Math.min(255, Math.round(v)));
+  };
+  const hex = (v) => v.toString(16).padStart(2, "0");
+  return `#${hex(ch(DEVICE_LOOK_COEFFS.r))}${hex(ch(DEVICE_LOOK_COEFFS.g))}${hex(ch(DEVICE_LOOK_COEFFS.b))}`;
 }
 
 async function refreshMidi() {
