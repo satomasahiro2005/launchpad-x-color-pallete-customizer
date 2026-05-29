@@ -6,8 +6,10 @@ This repository does not include Novation firmware binaries or SysEx files. Load
 your own official v2.0.1 `.syx` or decoded `.bin` file in the browser, patch it
 locally, then download or write the patched SysEx.
 
-See [FIRMWARE_422.md](./FIRMWARE_422.md) for the exact binary offsets and patch
-behavior.
+Colour-analysis docs live in [`docs/`](./docs/):
+[FIRMWARE_422.md](./docs/FIRMWARE_422.md) (binary offsets & patch behaviour),
+[COLOR_PALETTE_USAGE.md](./docs/COLOR_PALETTE_USAGE.md) (palette usage by screen),
+[SCREEN_COLOR_MAP.md](./docs/SCREEN_COLOR_MAP.md) (per-screen colour edit points).
 
 ## Acknowledgements
 
