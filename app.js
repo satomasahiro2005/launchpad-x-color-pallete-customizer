@@ -61,7 +61,7 @@ const FIXED_PALETTE_TARGETS = [
     kind: "palette-slot",
     label: "B blend",
     description: "Second transpose blend color",
-    slot: 0x25,
+    slot: 0x2d,
   },
 ];
 const SLOT_TARGETS = [
@@ -782,7 +782,7 @@ function getOutputPalette() {
     palette[0x5e] = [...state.palette[state.table.root]];
     palette[0x5f] = [...state.palette[state.table.root]];
     palette[0x24] = [...state.palette[state.table.scale]];
-    palette[0x25] = [...state.palette[state.table.scale]];
+    palette[0x2d] = [...state.palette[state.table.scale]];
   }
 
   return palette;
