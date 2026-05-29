@@ -18,6 +18,7 @@ const elements = {
   showPalette0Button: document.querySelector("#show-palette-0-button"),
   showPalette1Button: document.querySelector("#show-palette-1-button"),
   deviceRestoreButton: document.querySelector("#device-restore-button"),
+  deviceSelect: document.querySelector("#device-select"),
   page0Grid: document.querySelector("#page0-grid"),
   page1Grid: document.querySelector("#page1-grid"),
   notice: document.querySelector("#notice"),
@@ -26,6 +27,7 @@ const elements = {
 const state = {
   palette: loadPalette(),
   devices: [],
+  selectedOutputId: null,
   logLines: [],
 };
 
@@ -57,6 +59,9 @@ function init() {
   elements.showPalette0Button.addEventListener("click", () => showPaletteOnDevice(0));
   elements.showPalette1Button.addEventListener("click", () => showPaletteOnDevice(1));
   elements.deviceRestoreButton.addEventListener("click", restoreDeviceLayout);
+  elements.deviceSelect.addEventListener("change", () => {
+    state.selectedOutputId = elements.deviceSelect.value || null;
+  });
 
   renderGrids();
   renderStatus();
@@ -106,18 +111,46 @@ function renderPage(table, page) {
   table.appendChild(tbody);
 }
 
-function deviceOfType(type) {
-  return state.devices.find((device) => device.type === type && device.output) || null;
+// Normal-mode Launchpad X ports. A unit can expose more than one ("LPX DAW"
+// and "LPX MIDI"), and multiple units may be connected, so the user picks one.
+function lpxDevices() {
+  return state.devices.filter((device) => device.type === "LPX" && device.output);
 }
 
 function findLpxOutput() {
-  const lpx = deviceOfType("LPX");
-  if (!lpx) {
+  const list = lpxDevices();
+  if (!list.length) {
     throw new Error(
       "Launchpad X (normal mode) not found. Use the device normally (not bootloader), then Refresh MIDI."
     );
   }
-  return lpx.output;
+  const chosen = list.find((device) => device.output.id === state.selectedOutputId);
+  return (chosen || list[0]).output;
+}
+
+function renderDeviceSelect() {
+  const list = lpxDevices();
+  elements.deviceSelect.innerHTML = "";
+  if (!list.length) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "No Launchpad X";
+    elements.deviceSelect.appendChild(option);
+    return;
+  }
+  // Default to a "MIDI"-named port (best for Programmer-mode lighting) if the
+  // current selection is gone.
+  if (!list.some((device) => device.output.id === state.selectedOutputId)) {
+    const preferred = list.find((device) => /midi/i.test(device.output.name || "")) || list[0];
+    state.selectedOutputId = preferred.output.id;
+  }
+  list.forEach((device) => {
+    const option = document.createElement("option");
+    option.value = device.output.id;
+    option.textContent = device.output.name || "Launchpad X";
+    option.selected = device.output.id === state.selectedOutputId;
+    elements.deviceSelect.appendChild(option);
+  });
 }
 
 async function refreshMidi() {
@@ -141,15 +174,16 @@ function renderStatus() {
   } else if (!midi.accessGranted) {
     elements.midiState.textContent = "Click Refresh MIDI";
   } else {
-    elements.midiState.textContent = deviceOfType("LPX") ? "Connected (normal mode)" : "Not connected";
+    elements.midiState.textContent = lpxDevices().length ? "Connected (normal mode)" : "Not connected";
   }
+  renderDeviceSelect();
 }
 
 async function showPaletteOnDevice(page) {
   try {
     await refreshMidi();
     const output = findLpxOutput();
-    midiManager.sendSysex(output, [0xf0, 0x00, 0x20, 0x29, 0x02, 0x0c, 0x00, 0x7f, 0xf7]); // Programmer layout
+    midiManager.sendSysex(output, [0xf0, 0x00, 0x20, 0x29, 0x02, 0x0c, 0x0e, 0x01, 0xf7]); // Programmer mode
     const to7 = (channel) => Math.min(127, channel * 2);
     const specs = [];
     for (let row = 0; row < 8; row++) {
@@ -170,8 +204,8 @@ async function restoreDeviceLayout() {
   try {
     await refreshMidi();
     const output = findLpxOutput();
-    midiManager.sendSysex(output, [0xf0, 0x00, 0x20, 0x29, 0x02, 0x0c, 0x00, 0x00, 0xf7]); // Session layout
-    setNotice("Launchpad X returned to Session layout.");
+    midiManager.sendSysex(output, [0xf0, 0x00, 0x20, 0x29, 0x02, 0x0c, 0x0e, 0x00, 0xf7]); // Live mode
+    setNotice("Launchpad X returned to Live mode.");
   } catch (error) {
     setNotice(error.message || String(error));
   }
