@@ -49,6 +49,13 @@ export function createMidiManager({ log }) {
     return latestDevices;
   }
 
+  // All MIDI output ports (even ones the identity scan didn't classify as a
+  // Launchpad), so the user can still send to a device if detection missed it.
+  function getOutputs() {
+    if (!midiAccess) return [];
+    return Array.from(midiAccess.outputs.values());
+  }
+
   function getState() {
     return {
       supported,
@@ -136,6 +143,7 @@ export function createMidiManager({ log }) {
   return {
     flashToDevice,
     getDevices,
+    getOutputs,
     getState,
     refresh,
     sendSysex,
