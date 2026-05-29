@@ -84,7 +84,7 @@ const TOP_PREVIEW_TARGETS = [
   "transpose-b-base",
   "transpose-b-blend",
   "menu-disabled",
-  "tab-idle",
+  "tab-selected", // Note mode is the active mode in this preview
   "tab-idle",
   "tab-idle",
 ];
@@ -586,7 +586,11 @@ function renderPalette() {
       td.align = "center";
       td.bgColor = colorHex(rgb);
       td.title = `0x${toHex(index)} / ${index} / rgb ${rgb.join(" ")}`;
-      td.textContent = index === activeIndex ? "*" : usedIndices.has(index) ? "." : " ";
+      td.textContent = usedIndices.has(index) ? "." : "";
+      if (index === activeIndex) {
+        td.style.outline = "2px solid #ffffff";
+        td.style.outlineOffset = "-2px";
+      }
 
       td.addEventListener("mouseenter", () => {
         elements.paletteHover.textContent = `0x${toHex(index)} / ${index} / rgb ${rgb.join(" ")}`;
@@ -707,8 +711,14 @@ function emptyPreviewCell() {
 }
 
 function applyPreviewStyle(td, preview) {
-  td.style.backgroundColor = preview.kind === "note" ? preview.color : SURFACE_BG;
-  td.style.color = preview.kind === "note" ? "#ffffff" : preview.color;
+  if (preview.kind === "note") {
+    td.style.backgroundColor = preview.color;
+    td.style.color = "#ffffff";
+    return;
+  }
+  td.style.backgroundColor = SURFACE_BG;
+  // logo/disabled cells have no meaningful colour — keep their label readable.
+  td.style.color = preview.kind === "logo" ? "#888888" : preview.color;
 }
 
 function applyPreviewHoverStyle(td, preview) {

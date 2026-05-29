@@ -26,6 +26,30 @@
         <input id="firmware-file-input" type="file" hidden />
       </header>
 
+      <!-- Help: how to get the firmware and the palette file format -->
+      <details class="border p-3">
+        <summary class="cursor-pointer font-bold">Help — getting the firmware &amp; palette format</summary>
+        <div class="mt-3 flex flex-col gap-4 text-sm">
+          <div>
+            <p class="font-bold">Get the firmware (.syx)</p>
+            <p>This app does not bundle firmware — load your own. Connect the Launchpad X in bootloader mode (hold <strong>Capture MIDI</strong> while plugging in), open
+              <a class="underline" href="https://components.novationmusic.com/" target="_blank" rel="noreferrer">Novation Components</a>,
+              start a firmware reinstall, then find the firmware URL in DevTools → Network. It looks like:</p>
+            <code class="mt-1 block overflow-x-auto border p-2">https://circuit-librarian.s3.eu-west-1.amazonaws.com/uploads/firmware/file/147/launchpadx-firmware-422.syx</code>
+            <p class="mt-1">Download that file, then press <strong>Load firmware</strong> above. Decoded official v2.0.1 is detected by its SHA-256.</p>
+          </div>
+          <div>
+            <p class="font-bold">Palette file format (Import / Export)</p>
+            <p>Plain text, one entry per line: <code>index, R G B;</code> — index <code>0–127</code>, each channel <code>0–63</code>. All 128 entries required. Example:</p>
+            <code class="mt-1 block overflow-x-auto border p-2">0, 0 0 0;
+5, 63 0 0;
+21, 0 63 0;</code>
+            <p class="mt-1">Ready-made Launchpad palettes:
+              <a class="underline" href="https://www.kaskobi.com/palettes" target="_blank" rel="noreferrer">kaskobi.com/palettes</a>.</p>
+          </div>
+        </div>
+      </details>
+
       <!-- Workspace: device preview (left) + palette & color editor (right) -->
       <div class="grid grid-cols-[minmax(360px,1fr)_1fr] gap-4">
         <!-- Left column -->
