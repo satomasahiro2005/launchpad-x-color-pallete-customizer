@@ -6,6 +6,7 @@
 // localStorage; this page reads them. You can also Import a palette file here.
 import { DEFAULT_PALETTE, parsePaletteFile } from "./firmware.js";
 import { createMidiManager } from "./midi.js";
+import { DEVICE_BEZEL, deviceGlow } from "./devicelook.js";
 
 const PALETTE_KEY = "lpx-palette";
 
@@ -19,6 +20,7 @@ const elements = {
   showPalette1Button: document.querySelector("#show-palette-1-button"),
   deviceRestoreButton: document.querySelector("#device-restore-button"),
   deviceSelect: document.querySelector("#device-select"),
+  deviceLookCheckbox: document.querySelector("#device-look-checkbox"),
   page0Grid: document.querySelector("#page0-grid"),
   page1Grid: document.querySelector("#page1-grid"),
   notice: document.querySelector("#notice"),
@@ -28,6 +30,7 @@ const state = {
   palette: loadPalette(),
   outputs: [],
   selectedOutputId: null,
+  deviceLook: false,
   logLines: [],
 };
 
@@ -62,6 +65,10 @@ function init() {
   elements.deviceSelect.addEventListener("change", () => {
     state.selectedOutputId = elements.deviceSelect.value || null;
   });
+  elements.deviceLookCheckbox.addEventListener("change", () => {
+    state.deviceLook = elements.deviceLookCheckbox.checked;
+    renderGrids();
+  });
 
   renderGrids();
   renderStatus();
@@ -94,15 +101,19 @@ function renderGrids() {
 
 function renderPage(table, page) {
   table.innerHTML = "";
+  // Device-look: round LED glow per pad on one uniform dark-grey bezel.
+  table.style.background = state.deviceLook ? DEVICE_BEZEL : "";
+  table.style.borderSpacing = state.deviceLook ? "3px" : "0";
   const tbody = document.createElement("tbody");
   for (let row = 0; row < 8; row++) {
     const tr = document.createElement("tr");
     for (let col = 0; col < 8; col++) {
       const index = page * 64 + row * 8 + col;
+      const rgb = state.palette[index];
       const td = document.createElement("td");
       td.width = 24;
       td.height = 24;
-      td.bgColor = colorHex(state.palette[index]);
+      td.style.background = state.deviceLook ? deviceGlow(rgb) : colorHex(rgb);
       td.title = `0x${index.toString(16).padStart(2, "0")} / ${index}`;
       tr.appendChild(td);
     }
