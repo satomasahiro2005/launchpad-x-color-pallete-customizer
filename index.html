@@ -4,83 +4,143 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>LaunchPad X Color Pallete Customizer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
   </head>
-  <body>
-    <main>
-      <h1>LaunchPad X Color Pallete Customizer</h1>
+  <body class="min-w-[960px]" style="background: white; color: black; color-scheme: light;">
+    <main class="mx-auto grid max-w-[1280px] gap-4 p-4">
+      <header class="border p-4">
+        <div class="flex items-start justify-between gap-6">
+          <div>
+            <h1 class="text-3xl font-bold">LaunchPad X Color Pallete Customizer</h1>
+            <p class="mt-2 max-w-4xl">
+              Load firmware, choose palette colors, preview Note mode, then download or write the patched SYX.
+            </p>
+          </div>
+          <div class="flex gap-2">
+            <button id="refresh-midi-button" class="whitespace-nowrap px-3 py-1" type="button">Refresh MIDI</button>
+            <button id="read-firmware-button" class="whitespace-nowrap px-3 py-1" type="button">Read firmware file</button>
+          </div>
+        </div>
+      </header>
 
-      <section>
-        <h2>Status</h2>
-        <ul>
-          <li><strong>Connected device:</strong> <span id="midi-state">Click refresh MIDI</span></li>
-          <li><strong>Bootloader mode:</strong> <span id="bootloader-state">Unknown</span></li>
-          <li><strong>Firmware file:</strong> <span id="firmware-state">No firmware loaded</span></li>
-          <li><strong>Firmware check:</strong> <span id="firmware-check">Not checked</span></li>
-        </ul>
-        <p>
-          Connect the Launchpad X in bootloader mode, open
-          <a href="https://components.novationmusic.com/" target="_blank" rel="noreferrer">components.novationmusic.com</a>,
-          start a firmware reinstall, then use DevTools Network to find the official firmware URL.
-          It should look like
-          <code>https://circuit-librarian.s3.eu-west-1.amazonaws.com/uploads/firmware/file/147/launchpadx-firmware-422.syx</code>.
-          Download that SYX file and load it here.
-        </p>
-        <p>This app does not include firmware. It only checks the official 422 SHA-256 hash.</p>
-        <p>
-          <button id="refresh-midi-button" type="button">Refresh MIDI</button>
-          <select id="device-select"></select>
-          <button id="read-firmware-button" type="button">Read firmware file</button>
-        </p>
-        <input id="firmware-file-input" type="file" hidden />
+      <section class="grid grid-cols-[1fr_1fr] gap-4">
+        <div class="border p-4">
+          <div class="flex items-center justify-between gap-4">
+            <h2 class="text-xl font-bold">Status</h2>
+            <select id="device-select" class="min-w-[280px] px-2 py-1"></select>
+          </div>
+
+          <dl class="mt-4 grid grid-cols-2 gap-x-6 gap-y-3">
+            <div>
+              <dt class="font-bold">Connected device</dt>
+              <dd id="midi-state" class="font-mono">Click refresh MIDI</dd>
+            </div>
+            <div>
+              <dt class="font-bold">Bootloader mode</dt>
+              <dd id="bootloader-state" class="font-mono">Unknown</dd>
+            </div>
+            <div>
+              <dt class="font-bold">Firmware file</dt>
+              <dd id="firmware-state" class="break-all font-mono">No firmware loaded</dd>
+            </div>
+            <div>
+              <dt class="font-bold">Firmware check</dt>
+              <dd id="firmware-check" class="font-mono">Not checked</dd>
+            </div>
+          </dl>
+          <input id="firmware-file-input" type="file" hidden />
+        </div>
+
+        <div class="border p-4">
+          <h2 class="text-xl font-bold">Firmware Source</h2>
+          <p class="mt-2">
+            Connect the Launchpad X in bootloader mode, open
+            <a href="https://components.novationmusic.com/" target="_blank" rel="noreferrer">components.novationmusic.com</a>,
+            start a firmware reinstall, then use DevTools Network to find the official firmware URL.
+          </p>
+          <code class="mt-2 block overflow-x-auto p-2">https://circuit-librarian.s3.eu-west-1.amazonaws.com/uploads/firmware/file/147/launchpadx-firmware-422.syx</code>
+          <p class="mt-2">This app does not include firmware. It only checks the official 422 SHA-256 hash.</p>
+        </div>
       </section>
 
-      <section>
-        <h2>Color Palette</h2>
-        <p>
-          <button id="import-palette-button" type="button">Import</button>
-          <button id="export-palette-button" type="button">Export</button>
-        </p>
-        <input id="palette-file-input" type="file" hidden />
-        <div id="palette-hover">Hover a color</div>
-        <table id="palette-grid" border="1" cellspacing="0" cellpadding="0"></table>
+      <section class="grid grid-cols-[580px_1fr] gap-4">
+        <div class="border p-4">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <h2 class="text-xl font-bold">Color Palette</h2>
+              <div id="palette-hover" class="mt-1 font-mono">Hover a color</div>
+            </div>
+            <div class="flex gap-2">
+              <button id="import-palette-button" class="whitespace-nowrap px-3 py-1" type="button">Import</button>
+              <button id="export-palette-button" class="whitespace-nowrap px-3 py-1" type="button">Export</button>
+            </div>
+          </div>
+          <input id="palette-file-input" type="file" hidden />
+          <div class="mt-4 overflow-x-auto">
+            <table id="palette-grid" class="border-separate border-spacing-1"></table>
+          </div>
+        </div>
+
+        <div class="grid gap-4">
+          <section class="border p-4">
+            <div class="flex items-start gap-6">
+              <div>
+                <h2 class="text-xl font-bold">Preview</h2>
+                <p class="mt-1">Hover Note pads to preview pushed/accent behavior.</p>
+                <table id="preview-grid" class="mt-4 border-separate border-spacing-1"></table>
+              </div>
+              <div>
+                <h3 class="font-bold">Note push</h3>
+                <table id="selected-preview" class="mt-2 border-separate border-spacing-1"></table>
+              </div>
+            </div>
+          </section>
+
+          <section class="border p-4">
+            <div class="grid grid-cols-[1fr_180px] gap-4">
+              <div>
+                <h2 class="text-xl font-bold">Targets</h2>
+                <p class="mt-1">Pick a target, then click a palette color.</p>
+
+                <h3 class="mt-4 font-bold">Note color</h3>
+                <div id="note-target-list" class="mt-2 flex flex-wrap gap-2"></div>
+
+                <h3 class="mt-4 font-bold">Octave / transpose color</h3>
+                <label class="mt-2 flex items-center gap-2">
+                  <input id="sync-transpose-checkbox" type="checkbox" />
+                  Sync transpose color with note color
+                </label>
+                <div id="transpose-target-list" class="mt-2 flex flex-wrap gap-2"></div>
+
+                <h3 class="mt-4 font-bold">Mode and custom tab select</h3>
+                <div id="mode-target-list" class="mt-2 flex flex-wrap gap-2"></div>
+              </div>
+
+              <aside class="border p-3">
+                <h3 class="font-bold">Selected target</h3>
+                <p id="active-title" class="mt-2 text-xl font-bold">Root</p>
+                <div id="active-meta" class="mt-2 font-mono"></div>
+              </aside>
+            </div>
+          </section>
+        </div>
       </section>
 
-      <section>
-        <h2>Preview</h2>
-        <table id="preview-grid" border="1" cellspacing="0" cellpadding="0"></table>
-        <p>Note push</p>
-        <table id="selected-preview" border="1" cellspacing="0" cellpadding="0"></table>
-      </section>
+      <section class="grid grid-cols-[300px_1fr] gap-4">
+        <div class="border p-4">
+          <h2 class="text-xl font-bold">Write Firmware</h2>
+          <p class="mt-2">Load firmware first. Write only when Launchpad X is in bootloader mode.</p>
+          <div class="mt-4 grid gap-2">
+            <button id="download-syx-button" class="whitespace-nowrap px-3 py-1" type="button">Download SYX</button>
+            <button id="write-device-button" class="whitespace-nowrap px-3 py-1" type="button">Write firmware</button>
+          </div>
+        </div>
 
-      <section>
-        <h2>Info</h2>
-        <h3>Note color</h3>
-        <div id="note-target-list"></div>
-        <h3>Octave / transpose color</h3>
-        <label>
-          <input id="sync-transpose-checkbox" type="checkbox" />
-          Sync transpose color with note color
-        </label>
-        <div id="transpose-target-list"></div>
-        <h3>Mode and custom tab select</h3>
-        <div id="mode-target-list"></div>
-        <p><strong id="active-title">Root</strong></p>
-        <div id="active-meta"></div>
+        <div class="border p-4">
+          <h2 class="text-xl font-bold">Logs</h2>
+          <textarea id="notice" class="mt-3 h-56 w-full p-2 font-mono text-sm" readonly></textarea>
+        </div>
       </section>
-
-      <section>
-        <h2>Write Firmware</h2>
-        <p>
-          <button id="download-syx-button" type="button">Download SYX</button>
-          <button id="write-device-button" type="button">Write firmware</button>
-        </p>
-      </section>
-
-      <section>
-        <h2>Logs</h2>
-        <textarea id="notice" rows="14" cols="120" readonly></textarea>
-      </section>
-
     </main>
 
     <script type="module" src="./app.js"></script>

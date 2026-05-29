@@ -81,6 +81,13 @@ const TOP_PREVIEW_TARGETS = [
 ];
 const KNOWN_LPX_422_FIRMWARE_SHA256 =
   "9cbb359292aeb93affc50d9b6a7b80449e034686927fc5e2e5f6572cf3ddee8e";
+const TARGET_BUTTON_CLASS = "whitespace-nowrap px-2 py-1";
+const TARGET_BUTTON_IDLE_CLASS = "";
+const TARGET_BUTTON_ACTIVE_CLASS = "font-bold underline";
+const PREVIEW_CELL_CLASS =
+  "h-8 w-8 cursor-pointer select-none border-2 text-center align-middle font-mono text-xs font-bold";
+const PALETTE_CELL_CLASS =
+  "h-7 w-7 cursor-pointer select-none border text-center align-middle font-mono text-[10px] font-bold";
 
 const state = {
   activeTarget: "root",
@@ -404,7 +411,12 @@ function renderSlots() {
     const container = getTargetContainer(target);
 
     button.type = "button";
-    button.textContent = `${state.activeTarget === target.id ? "[*]" : "[ ]"} ${target.label}`;
+    button.textContent = target.label;
+    button.className = `${TARGET_BUTTON_CLASS} ${
+      state.activeTarget === target.id
+        ? TARGET_BUTTON_ACTIVE_CLASS
+        : TARGET_BUTTON_IDLE_CLASS
+    }`;
     button.addEventListener("click", () => {
       state.activeTarget = target.id;
       render();
@@ -435,6 +447,7 @@ function renderPreview() {
       td.width = 24;
       td.height = 24;
       td.align = "center";
+      td.className = PREVIEW_CELL_CLASS;
       td.title = preview.title;
       td.textContent = preview.text || (preview.active ? "*" : " ");
       td.dataset.previewKind = preview.kind;
@@ -493,6 +506,7 @@ function renderSelectedPreview() {
   td.width = 24;
   td.height = 24;
   td.align = "center";
+  td.className = PREVIEW_CELL_CLASS;
   td.title = preview.title;
   td.textContent = preview.active ? "*" : " ";
   applyPreviewStyle(td, preview);
@@ -532,6 +546,7 @@ function renderPalette() {
       td.width = 24;
       td.height = 24;
       td.align = "center";
+      td.className = PALETTE_CELL_CLASS;
       td.bgColor = colorHex(rgb);
       td.title = `0x${toHex(index)} / ${index} / rgb ${rgb.join(" ")}`;
       td.textContent = index === activeIndex ? "*" : usedIndices.has(index) ? "." : " ";
