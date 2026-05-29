@@ -248,16 +248,30 @@ function requestIdentityOnce(inputs, outputs, log) {
       handlers.push({ input, handler });
     });
 
-    outputs.forEach((output) => {
-      log(`sending identity request to "${output.name}": ${formatBytes(request)}`);
-      output.send(request);
-    });
+    // Send the identity request a few times — a device that just entered
+    // bootloader mode (or was slow to enumerate) can miss a single probe, which
+    // made flashing succeed only after several Refresh MIDI tries.
+    const sendAll = () => {
+      outputs.forEach((output) => {
+        try {
+          output.send(request);
+        } catch (error) {
+          log(`identity send failed on "${output.name}": ${error.message || error}`);
+        }
+      });
+    };
+    log(`sending identity request to ${outputs.length} output(s) (x3)`);
+    sendAll();
+    const retry1 = setTimeout(sendAll, 350);
+    const retry2 = setTimeout(sendAll, 750);
 
     setTimeout(() => {
+      clearTimeout(retry1);
+      clearTimeout(retry2);
       cleanup();
       log(`identity scan complete: replies=${replies.size}`);
       resolve(replies);
-    }, 900);
+    }, 1700);
   });
 }
 
