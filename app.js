@@ -642,13 +642,14 @@ function renderPalette() {
       });
 
       td.addEventListener("click", () => {
+        // Note roles point at a palette index, so clicking re-points them.
+        // Transpose/tab targets are FIXED palette indices; their colour is edited
+        // with the R/G/B fields. Clicking the palette must NOT overwrite an entry
+        // here — doing so corrupted shared colours (e.g. 0x00 off, 0x01, 0x24).
         if (activeTarget.kind === "note-role") {
           state.table[activeTarget.id] = index;
-        } else {
-          state.palette[activeTarget.slot] = [...state.palette[index]];
-          state.paletteDirty = true;
+          render();
         }
-        render();
       });
 
       tr.appendChild(td);
