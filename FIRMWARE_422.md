@@ -136,13 +136,12 @@ wrong.) See `COLOR_PALETTE_USAGE.md` and `SCREEN_COLOR_MAP.md` for the full trac
 > instead; that has since been corrected.
 
 When `Sync transpose color with note color` is enabled, export/write overwrites
-the transpose slots from the selected Note colors:
+only the transpose **base** slots from the selected Note colors; the blend slots
+(`0x5f` / `0x2d`) are left untouched so the gradient is preserved:
 
 ```js
-palette[0x5e] = palette[table.root];
-palette[0x5f] = palette[table.root];
-palette[0x24] = palette[table.scale];
-palette[0x2d] = palette[table.scale];
+palette[0x5e] = palette[table.root];   // A base
+palette[0x24] = palette[table.scale];  // B base
 ```
 
 Current preview model:
