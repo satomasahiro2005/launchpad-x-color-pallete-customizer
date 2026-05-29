@@ -536,6 +536,8 @@ function renderPreview() {
 
         td.addEventListener("click", () => {
           if (!preview.targetId) return;
+          // Locked (synced) transpose bases aren't editable; don't select them.
+          if (isSyncedTransposeBase(preview.targetId)) return;
           state.activeTarget = preview.targetId;
           render();
         });
