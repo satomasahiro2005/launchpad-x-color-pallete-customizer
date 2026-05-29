@@ -26,7 +26,7 @@ const elements = {
 
 const state = {
   palette: loadPalette(),
-  devices: [],
+  outputs: [],
   selectedOutputId: null,
   logLines: [],
 };
@@ -111,44 +111,38 @@ function renderPage(table, page) {
   table.appendChild(tbody);
 }
 
-// Normal-mode Launchpad X ports. A unit can expose more than one ("LPX DAW"
-// and "LPX MIDI"), and multiple units may be connected, so the user picks one.
-function lpxDevices() {
-  return state.devices.filter((device) => device.type === "LPX" && device.output);
-}
-
-function findLpxOutput() {
-  const list = lpxDevices();
-  if (!list.length) {
-    throw new Error(
-      "Launchpad X (normal mode) not found. Use the device normally (not bootloader), then Refresh MIDI."
-    );
+// Any MIDI output — the identity scan may miss or misclassify a Launchpad, so
+// the user can send to whatever output they choose. A Launchpad/MIDI-named port
+// is preferred by default.
+function selectedOutput() {
+  if (!state.outputs.length) {
+    throw new Error("No MIDI output found. Connect a device, then Refresh MIDI.");
   }
-  const chosen = list.find((device) => device.output.id === state.selectedOutputId);
-  return (chosen || list[0]).output;
+  return state.outputs.find((output) => output.id === state.selectedOutputId) || state.outputs[0];
 }
 
 function renderDeviceSelect() {
-  const list = lpxDevices();
+  const list = state.outputs;
   elements.deviceSelect.innerHTML = "";
   if (!list.length) {
     const option = document.createElement("option");
     option.value = "";
-    option.textContent = "No Launchpad X";
+    option.textContent = "No MIDI output";
     elements.deviceSelect.appendChild(option);
     return;
   }
-  // Default to a "MIDI"-named port (best for Programmer-mode lighting) if the
-  // current selection is gone.
-  if (!list.some((device) => device.output.id === state.selectedOutputId)) {
-    const preferred = list.find((device) => /midi/i.test(device.output.name || "")) || list[0];
-    state.selectedOutputId = preferred.output.id;
+  if (!list.some((output) => output.id === state.selectedOutputId)) {
+    const preferred =
+      list.find((o) => /daw/i.test(o.name || "")) ||
+      list.find((o) => /launchpad|lpx/i.test(o.name || "")) ||
+      list[0];
+    state.selectedOutputId = preferred.id;
   }
-  list.forEach((device) => {
+  list.forEach((output) => {
     const option = document.createElement("option");
-    option.value = device.output.id;
-    option.textContent = device.output.name || "Launchpad X";
-    option.selected = device.output.id === state.selectedOutputId;
+    option.value = output.id;
+    option.textContent = output.name || "MIDI output";
+    option.selected = output.id === state.selectedOutputId;
     elements.deviceSelect.appendChild(option);
   });
 }
@@ -160,7 +154,7 @@ async function refreshMidi() {
   }
   try {
     await midiManager.refresh();
-    state.devices = midiManager.getDevices();
+    state.outputs = midiManager.getOutputs();
     renderStatus();
   } catch (error) {
     setNotice(error.message || "MIDI initialization failed.");
@@ -174,7 +168,9 @@ function renderStatus() {
   } else if (!midi.accessGranted) {
     elements.midiState.textContent = "Click Refresh MIDI";
   } else {
-    elements.midiState.textContent = lpxDevices().length ? "Connected (normal mode)" : "Not connected";
+    elements.midiState.textContent = state.outputs.length
+      ? `${state.outputs.length} MIDI output(s)`
+      : "No outputs";
   }
   renderDeviceSelect();
 }
@@ -182,19 +178,21 @@ function renderStatus() {
 async function showPaletteOnDevice(page) {
   try {
     await refreshMidi();
-    const output = findLpxOutput();
-    midiManager.sendSysex(output, [0xf0, 0x00, 0x20, 0x29, 0x02, 0x0c, 0x0e, 0x01, 0xf7]); // Programmer mode
-    const to7 = (channel) => Math.min(127, channel * 2);
-    const specs = [];
+    const output = selectedOutput();
+    // DAW mode keeps the device in normal use: Session-layout lighting shows on
+    // the Session tab, no Programmer mode needed.
+    midiManager.sendSysex(output, [0xf0, 0x00, 0x20, 0x29, 0x02, 0x0c, 0x10, 0x01, 0xf7]); // DAW mode on
+    midiManager.sendSysex(output, [0xf0, 0x00, 0x20, 0x29, 0x02, 0x0c, 0x00, 0x00, 0xf7]); // Session layout
+    // Static colour on Session layout: Note On ch1 (0x90), note = pad,
+    // velocity = palette index (device shows its palette colour; vel 0 = off).
     for (let row = 0; row < 8; row++) {
       for (let col = 0; col < 8; col++) {
-        const led = (8 - row) * 10 + (col + 1);
-        const rgb = state.palette[page * 64 + row * 8 + col];
-        specs.push(0x03, led, to7(rgb[0]), to7(rgb[1]), to7(rgb[2]));
+        const note = (8 - row) * 10 + (col + 1);
+        const index = page * 64 + row * 8 + col;
+        output.send([0x90, note, index]);
       }
     }
-    midiManager.sendSysex(output, [0xf0, 0x00, 0x20, 0x29, 0x02, 0x0c, 0x03, ...specs, 0xf7]);
-    setNotice(`Palette ${page ? "64–127" : "0–63"} shown on Launchpad X.`);
+    setNotice(`Palette ${page ? "64–127" : "0–63"} shown on the Session tab (DAW mode).`);
   } catch (error) {
     setNotice(error.message || String(error));
   }
@@ -203,9 +201,10 @@ async function showPaletteOnDevice(page) {
 async function restoreDeviceLayout() {
   try {
     await refreshMidi();
-    const output = findLpxOutput();
-    midiManager.sendSysex(output, [0xf0, 0x00, 0x20, 0x29, 0x02, 0x0c, 0x0e, 0x00, 0xf7]); // Live mode
-    setNotice("Launchpad X returned to Live mode.");
+    const output = selectedOutput();
+    // Revert to Standalone so the device behaves normally again.
+    midiManager.sendSysex(output, [0xf0, 0x00, 0x20, 0x29, 0x02, 0x0c, 0x10, 0x00, 0xf7]); // DAW mode off
+    setNotice("Exited DAW mode (Standalone).");
   } catch (error) {
     setNotice(error.message || String(error));
   }
