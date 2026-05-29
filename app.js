@@ -13,27 +13,30 @@ import {
 import { createMidiManager } from "./midi.js";
 
 const SCALE_NOTES = new Set([0, 2, 4, 5, 7, 9, 11]);
+// Fill for cells outside the 8x8 (top controls, scene column, logo). Dark grey
+// rather than black so they stay visible next to palette-0 (black) note pads.
+const SURFACE_BG = "#2b2b2b";
 const FIXED_PALETTE_TARGETS = [
   {
     id: "tab-disabled",
     kind: "palette-slot",
     label: "Tab disabled",
-    description: "Mode / Custom disabled color candidate",
-    slot: 0x01,
+    description: "Mode button off/disabled (0x00, per disassembly)",
+    slot: 0x00,
   },
   {
     id: "tab-idle",
     kind: "palette-slot",
     label: "Tab idle",
-    description: "Mode / Custom unselected color candidate",
-    slot: 0x24,
+    description: "Mode button idle/unselected (0x01, dim)",
+    slot: 0x01,
   },
   {
     id: "tab-selected",
     kind: "palette-slot",
     label: "Tab selected",
-    description: "Mode / Custom selected color candidate",
-    slot: 0x34,
+    description: "Mode button selected/lit (0x1C, green)",
+    slot: 0x1c,
   },
   {
     id: "transpose-a-base",
@@ -61,13 +64,19 @@ const FIXED_PALETTE_TARGETS = [
     kind: "palette-slot",
     label: "B blend",
     description: "Second transpose blend color",
-    slot: 0x25,
+    slot: 0x2d,
   },
 ];
 const SLOT_TARGETS = [
   ...NOTE_ROLES.map((role) => ({ ...role, kind: "note-role" })),
   ...FIXED_PALETTE_TARGETS,
 ];
+const TARGET_DISPLAY_LABELS = {
+  root: "Root note",
+  scale: "In-scale",
+  off: "Out-of-scale",
+  accent: "Accent (pressed)",
+};
 const TOP_PREVIEW_LABELS = ["↑", "↓", "←", "→", "S", "N", "C", "C"];
 const TOP_PREVIEW_TARGETS = [
   "transpose-a-base",
@@ -75,7 +84,7 @@ const TOP_PREVIEW_TARGETS = [
   "transpose-b-base",
   "transpose-b-blend",
   "menu-disabled",
-  "tab-idle",
+  "tab-selected", // Note mode is the active mode in this preview
   "tab-idle",
   "tab-idle",
 ];
@@ -126,6 +135,10 @@ const elements = {
   syncTransposeCheckbox: document.querySelector("#sync-transpose-checkbox"),
   transposeTargetList: document.querySelector("#transpose-target-list"),
   writeDeviceButton: document.querySelector("#write-device-button"),
+  selectedSwatch: document.querySelector("#selected-swatch"),
+  rgbR: document.querySelector("#rgb-r"),
+  rgbG: document.querySelector("#rgb-g"),
+  rgbB: document.querySelector("#rgb-b"),
 };
 
 const midiManager = createMidiManager({
@@ -165,6 +178,10 @@ function init() {
 
   elements.syncTransposeCheckbox.addEventListener("change", () => {
     state.syncTranspose = elements.syncTransposeCheckbox.checked;
+    // Synced transpose targets are not editable, so don't leave one selected.
+    if (isSyncedTransposeBase(state.activeTarget)) {
+      state.activeTarget = "root";
+    }
     appendAppLog(
       state.syncTranspose
         ? "transpose sync enabled"
@@ -234,7 +251,46 @@ function init() {
     });
   });
 
+  [elements.rgbR, elements.rgbG, elements.rgbB].forEach((input) => {
+    input.addEventListener("input", onRgbInput);
+  });
+
   render();
+}
+
+function activePaletteIndex() {
+  return getTargetPaletteIndex(targetById[state.activeTarget]);
+}
+
+function onRgbInput() {
+  const clamp = (value) => Math.max(0, Math.min(63, Math.round(Number(value) || 0)));
+  const index = activePaletteIndex();
+  state.palette[index] = [
+    clamp(elements.rgbR.value),
+    clamp(elements.rgbG.value),
+    clamp(elements.rgbB.value),
+  ];
+  state.paletteDirty = true;
+  render();
+}
+
+function isSyncedTransposeBase(id) {
+  // Only the transpose BASE colours follow the note colours on sync; the blend
+  // slots (0x5f / 0x2d) are left untouched and stay editable.
+  return state.syncTranspose && (id === "transpose-a-base" || id === "transpose-b-base");
+}
+
+function renderColorEditor() {
+  const target = targetById[state.activeTarget];
+  const synced = isSyncedTransposeBase(target.id);
+  const rgb = state.palette[activePaletteIndex()];
+  elements.selectedSwatch.style.backgroundColor = colorHex(rgb);
+  [elements.rgbR, elements.rgbG, elements.rgbB].forEach((el) => {
+    el.disabled = synced;
+  });
+  if (document.activeElement !== elements.rgbR) elements.rgbR.value = rgb[0];
+  if (document.activeElement !== elements.rgbG) elements.rgbG.value = rgb[1];
+  if (document.activeElement !== elements.rgbB) elements.rgbB.value = rgb[2];
 }
 
 function clonePalette(source) {
@@ -279,6 +335,7 @@ function render() {
   renderStatus();
   renderButtons();
   renderActiveSlot();
+  renderColorEditor();
   renderSlots();
   renderPreview();
   renderSelectedPreview();
@@ -324,10 +381,10 @@ function getFirmwareCheckText() {
   if (!state.stockFirmware) return "Not checked";
   if (!state.firmwareInfo) return "OK";
   if (state.firmwareInfo.hash === KNOWN_LPX_422_FIRMWARE_SHA256) {
-    return "OK / official 422";
+    return "Official v2.0.1 ✓";
   }
 
-  return "OK / custom";
+  return "Loaded (custom)";
 }
 
 function renderDeviceSelect() {
@@ -375,7 +432,7 @@ function renderActiveSlot() {
   const index = getTargetPaletteIndex(target);
   const rgb = state.palette[index];
 
-  elements.activeTitle.textContent = target.label;
+  elements.activeTitle.textContent = TARGET_DISPLAY_LABELS[target.id] || target.label;
 
   if (target.kind === "note-role") {
     elements.activeMeta.innerHTML = `
@@ -388,7 +445,7 @@ function renderActiveSlot() {
   elements.activeMeta.innerHTML = `
     <div>slot 0x${toHex(index)} / ${index}</div>
     <div>rgb ${rgb[0]} ${rgb[1]} ${rgb[2]}</div>
-    <div>${target.id.startsWith("transpose-") && state.syncTranspose ? "sync on" : ""}</div>
+    <div>${isSyncedTransposeBase(target.id) ? "sync on" : ""}</div>
   `;
 }
 
@@ -397,21 +454,38 @@ function renderSlots() {
   elements.transposeTargetList.innerHTML = "";
   elements.modeTargetList.innerHTML = "";
 
+  const outPalette = getOutputPalette();
+
   SLOT_TARGETS.forEach((target) => {
+    const synced = isSyncedTransposeBase(target.id);
     const index = getTargetPaletteIndex(target);
-    const rgb = state.palette[index];
+    const rgb = outPalette[index];
     const button = document.createElement("button");
     const container = getTargetContainer(target);
 
     button.type = "button";
-    button.textContent = `${state.activeTarget === target.id ? "[*]" : "[ ]"} ${target.label}`;
-    button.addEventListener("click", () => {
-      state.activeTarget = target.id;
-      render();
-    });
+    button.disabled = synced;
+    button.className =
+      state.activeTarget === target.id ? "border px-2 py-1 font-bold" : "border px-2 py-1";
+
+    const swatch = document.createElement("span");
+    swatch.style.cssText =
+      "display:inline-block;width:12px;height:12px;border:1px solid #000;margin-right:6px;vertical-align:middle;";
+    swatch.style.backgroundColor = colorHex(rgb);
+    button.appendChild(swatch);
+
+    let label = TARGET_DISPLAY_LABELS[target.id] || target.label;
+    if (synced) label += target.id.startsWith("transpose-a") ? " (= Root)" : " (= Scale)";
+    button.appendChild(document.createTextNode(label));
+
+    if (!synced) {
+      button.addEventListener("click", () => {
+        state.activeTarget = target.id;
+        render();
+      });
+    }
 
     container.appendChild(button);
-    container.appendChild(document.createTextNode(" "));
   });
 }
 
@@ -462,6 +536,8 @@ function renderPreview() {
 
         td.addEventListener("click", () => {
           if (!preview.targetId) return;
+          // Locked (synced) transpose bases aren't editable; don't select them.
+          if (isSyncedTransposeBase(preview.targetId)) return;
           state.activeTarget = preview.targetId;
           render();
         });
@@ -534,7 +610,11 @@ function renderPalette() {
       td.align = "center";
       td.bgColor = colorHex(rgb);
       td.title = `0x${toHex(index)} / ${index} / rgb ${rgb.join(" ")}`;
-      td.textContent = index === activeIndex ? "*" : usedIndices.has(index) ? "." : " ";
+      td.textContent = usedIndices.has(index) ? "." : "";
+      if (index === activeIndex) {
+        td.style.outline = "2px solid #ffffff";
+        td.style.outlineOffset = "-2px";
+      }
 
       td.addEventListener("mouseenter", () => {
         elements.paletteHover.textContent = `0x${toHex(index)} / ${index} / rgb ${rgb.join(" ")}`;
@@ -655,16 +735,20 @@ function emptyPreviewCell() {
 }
 
 function applyPreviewStyle(td, preview) {
-  td.style.backgroundColor = preview.kind === "note" ? preview.color : "#000000";
-  td.style.color = preview.kind === "note" ? "#ffffff" : preview.color;
-  td.style.borderColor = preview.kind === "logo" ? "#000000" : preview.color;
+  if (preview.kind === "note") {
+    td.style.backgroundColor = preview.color;
+    td.style.color = "#ffffff";
+    return;
+  }
+  td.style.backgroundColor = SURFACE_BG;
+  // logo/disabled cells have no meaningful colour — keep their label readable.
+  td.style.color = preview.kind === "logo" ? "#888888" : preview.color;
 }
 
 function applyPreviewHoverStyle(td, preview) {
   const accent = colorHex(getOutputPalette()[state.table.accent]);
-  td.style.backgroundColor = preview.kind === "note" ? accent : "#000000";
+  td.style.backgroundColor = preview.kind === "note" ? accent : SURFACE_BG;
   td.style.color = preview.kind === "note" ? "#ffffff" : accent;
-  td.style.borderColor = accent;
 }
 
 function applyPushedPitchStyle(pitch) {
@@ -764,10 +848,10 @@ function getOutputPalette() {
   const palette = clonePalette(state.palette);
 
   if (state.syncTranspose) {
+    // Sync only the transpose base colours; leave the blend slots (0x5f / 0x2d)
+    // as the user / stock set them.
     palette[0x5e] = [...state.palette[state.table.root]];
-    palette[0x5f] = [...state.palette[state.table.root]];
     palette[0x24] = [...state.palette[state.table.scale]];
-    palette[0x25] = [...state.palette[state.table.scale]];
   }
 
   return palette;

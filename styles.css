@@ -1,0 +1,109 @@
+/* Local stylesheet — no remote dependencies (this tool loads firmware and
+   uses WebMIDI, so it must not execute third-party CDN script).
+   Implements just the layout utilities used by index.html / app.js, plus the
+   grid framing. Layout only: no rounded corners, gradients, or shadows. */
+
+/* Minimal reset (replaces what a framework preflight would do). */
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  line-height: 1.4;
+  color: #111;
+  background: #fff;
+}
+h1, h2, h3, p, ul, dl, dd {
+  margin: 0;
+}
+
+/* Layout utilities (Tailwind-compatible subset). */
+.flex { display: flex; }
+.flex-col { flex-direction: column; }
+.flex-wrap { flex-wrap: wrap; }
+.grid { display: grid; }
+.items-center { align-items: center; }
+.items-start { align-items: flex-start; }
+.mr-auto { margin-right: auto; }
+.mx-auto { margin-left: auto; margin-right: auto; }
+.block { display: block; }
+.inline-block { display: inline-block; }
+.overflow-x-auto { overflow-x: auto; }
+.cursor-pointer { cursor: pointer; }
+.underline { text-decoration: underline; }
+
+.gap-1 { gap: 0.25rem; }
+.gap-2 { gap: 0.5rem; }
+.gap-3 { gap: 0.75rem; }
+.gap-4 { gap: 1rem; }
+.gap-x-6 { column-gap: 1.5rem; }
+.gap-y-1 { row-gap: 0.25rem; }
+
+.p-2 { padding: 0.5rem; }
+.p-3 { padding: 0.75rem; }
+.p-4 { padding: 1rem; }
+.px-1 { padding-left: 0.25rem; padding-right: 0.25rem; }
+.px-2 { padding-left: 0.5rem; padding-right: 0.5rem; }
+.py-1 { padding-top: 0.25rem; padding-bottom: 0.25rem; }
+.mt-1 { margin-top: 0.25rem; }
+.mt-2 { margin-top: 0.5rem; }
+.mt-3 { margin-top: 0.75rem; }
+
+.max-w-6xl { max-width: 72rem; }
+.w-full { width: 100%; }
+.w-10 { width: 2.5rem; }
+.w-16 { width: 4rem; }
+.h-10 { height: 2.5rem; }
+
+.text-xl { font-size: 1.25rem; line-height: 1.75rem; }
+.text-sm { font-size: 0.875rem; line-height: 1.25rem; }
+.text-xs { font-size: 0.75rem; line-height: 1rem; }
+.font-bold { font-weight: 700; }
+.font-mono { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; }
+
+.border { border: 1px solid #cccccc; }
+
+/* Two-column workspace: device preview | palette + editor. */
+.workspace-grid { grid-template-columns: minmax(360px, 1fr) 1fr; }
+
+button, summary { cursor: pointer; }
+button:disabled { opacity: 0.5; }
+
+/* Device preview ("the Launchpad"): pads separated by a grey frame so that
+   black pads (palette 0) and the dark-grey control frame stay distinguishable. */
+#preview-grid,
+#selected-preview {
+  border-collapse: separate;
+  border-spacing: 3px;
+  background: #8a8a8a;
+  padding: 4px;
+}
+#preview-grid td,
+#selected-preview td {
+  width: 26px;
+  height: 26px;
+  text-align: center;
+  vertical-align: middle;
+  font-family: monospace;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* Palette: 16×8 swatches separated by thin grey gridlines. */
+#palette-grid {
+  border-collapse: separate;
+  border-spacing: 1px;
+  background: #9a9a9a;
+}
+#palette-grid td {
+  width: 22px;
+  height: 22px;
+  text-align: center;
+  vertical-align: middle;
+  font-family: monospace;
+  font-size: 9px;
+  line-height: 1;
+  cursor: pointer;
+}
