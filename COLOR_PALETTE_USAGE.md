@@ -1,146 +1,161 @@
-# Launchpad X 4.2.2 — 画面別カラーパレット使用箇所 調査結果
+# Launchpad X 4.2.2 — Palette usage by screen (firmware analysis)
 
-Launchpad X ファームウェア 4.2.2 (`launchpadx-firmware-422.syx`) を逆アセンブルし、
-**どの画面(モード/サーフェス)が 128 色パレットのどのインデックスを、どこで使っているか**
-を調査した結果をまとめる。
+Disassembly of the Launchpad X 4.2.2 firmware (`launchpadx-firmware-422.syx`) to
+map **which screen (mode / surface) uses which index of the 128-colour palette,
+and where**.
 
-- 対象 SysEx: `launchpadx-firmware-422.syx`(110,661 bytes)
-- デコード後 raw イメージ: 80,433 bytes / SHA-256 `9cbb359292aeb93affc50d9b6a7b80449e034686927fc5e2e5f6572cf3ddee8e`
-  (= 公式 4.2.2、`FIRMWARE_422.md` 記載のハッシュと一致)
-- 逆アセンブラ: `arm-none-eabi-objdump`(ARM Cortex-M / Thumb)
-- 作業ファイル(bin・逆アセンブルリスト・解析スクリプト)は `work/`(`.gitignore` 済み)
+- Input SysEx: `launchpadx-firmware-422.syx` (110,661 bytes)
+- Decoded raw image: 80,433 bytes / SHA-256 `9cbb359292aeb93affc50d9b6a7b80449e034686927fc5e2e5f6572cf3ddee8e`
+  (= official 4.2.2; matches the hash recorded in `FIRMWARE_422.md`)
+- Disassembler: `arm-none-eabi-objdump` (ARM Cortex-M / Thumb)
+- Reproduce with the tracked scripts in `tools/` (see the end of this doc). Raw
+  images and disassembly listings live in `work/`, which is gitignored.
 
-> 凡例 — **確定**: 逆アセンブルで命令レベルまで追跡。 **有力**: データ/参照は確認、最終描画経路の一部が未追跡。 **公開情報**: Novation 公式マニュアル等の一般知識による補完。
+> Confidence legend — **Confirmed**: traced to the instruction level.
+> **Strong**: data/reference verified, final render path partly untraced.
+> **Public**: filled in from Novation's official manuals.
 
 ---
 
-## 0. 最重要の前提修正:実ロードベースは `0x0800C000`
+## 0. Key correction: the real load base is `0x0800C000`
 
-既存 `FIRMWARE_422.md` は番地を **ファイルオフセット(疑似ベース `0x08000000`)** で記述しているが、
-ベクタテーブル(リセットベクタ `0x0801F478`、最小コードポインタ `0x0800C32F`)とリテラルプール解析から、
-**本イメージの実ロードベースは `0x0800C000`**(48 KB のブートローダ後のアプリ領域)であることを確認した。
+`FIRMWARE_422.md` records addresses as **file offsets (cosmetic base `0x08000000`)**.
+From the vector table (reset vector `0x0801F478`, lowest code pointer `0x0800C32F`)
+and literal-pool analysis, the **actual load base of this image is `0x0800C000`**
+(the application region after a 48 KB bootloader).
 
-| 項目 | ファイルオフセット | 実ランタイム番地(base `0x0800C000`) |
+| Item | File offset | Runtime address (base `0x0800C000`) |
 | --- | --- | --- |
-| RGB パレット先頭 | `0x12034` | **`0x0801E034`** |
-| Note 色テーブル | `0x0D126` | **`0x08019126`** |
-| タブ三状態テーブル候補 | `0x12974` | `0x0801E974` |
+| RGB palette start | `0x12034` | **`0x0801E034`** |
+| Note colour table | `0x0D126` | **`0x08019126`** |
+| Tab three-state table (candidate) | `0x12974` | `0x0801E974` |
 
-> この実ベースで初めて、パレット先頭 `0x0801E034` を指すリテラルプールが **8 箇所** 検出できた
-> (`0x08000000` 基準では参照ゼロ)。これが「パレットを読む 8 つの描画コード」= 調査対象の中心。
+> Only with this real base do literal pools pointing at the palette start
+> `0x0801E034` appear — **8 of them** (zero under base `0x08000000`). Those 8 are
+> "the code paths that read the palette" and are the focus of this analysis.
 
 ---
 
-## 1. パレットの構造(おさらい)
+## 1. Palette layout (recap)
 
-- 128 色 × 4 バイト = `B, G, R, 0x00`(各チャンネル `0..63`、ファーム内では `<<2` 格納)
-- 実体: `0x0801E034` ～ `0x0801E234`
-- パレット → RGB → 物理 LED への変換は **コア描画関数 `0x800FD0E`**(関数頭 `~0x800FA02`)が担う:
+- 128 colours × 4 bytes = `B, G, R, 0x00` (channels `0..63`, stored `<<2` in firmware)
+- Lives at `0x0801E034` .. `0x0801E234`
+- Palette → RGB → physical LED conversion is done by the **core render function
+  `0x800FD0E`** (function head `~0x800FA02`):
   ```
-  800fd0e: ldr   r0, [pc]        ; r0 = 0x0801E034 (palette base)
-  800fd10: ldrb  r1, [r7, #13]   ; r1 = そのパッドのパレットindex (RAM上のパッド状態)
-  800fd12: ldr.w r9, [r0, r1,lsl#2]  ; r9 = palette[index] の BGR ワード
+  800fd0e: ldr   r0, [pc]            ; r0 = 0x0801E034 (palette base)
+  800fd10: ldrb  r1, [r7, #13]       ; r1 = this pad's palette index (RAM pad state)
+  800fd12: ldr.w r9, [r0, r1,lsl#2]  ; r9 = palette[index] BGR word
   ```
-- LED 書き込みプリミティブ:
-  - `0x800F236` … `set_led(led, colorWord)`(`led < 100` の 10×10 内部バッファへ直接色ワード)
-  - `0x800F254` … LED の点灯モード(static / flash / pulse)
-  - `0x800F242` … LED フラグ(3bit)
+- LED write primitives:
+  - `0x800F236` … `set_led(led, colorWord)` (writes a raw colour word directly into
+    the 10×10 internal buffer, `led < 100`)
+  - `0x800F254` … LED lighting mode (static / flash / pulse)
+  - `0x800F242` … LED flags (3-bit field)
 
-### 内部 LED インデックス(0–99)と物理レイアウト
+### Internal LED index (0–99) vs physical layout
 
-`set_led` の `led` は MIDI ノートではなく **10×10 の内部座標 `row*10 + col`**。
+`set_led`'s `led` is not a MIDI note but a **10×10 internal coordinate `row*10 + col`**.
 
 ```
         col0   col1 .. col8   col9
-row0    logo   [ 上段コントロール 8個 ]   ←上段機能ボタン行
-row1..8  -     [    8 × 8 パッド    ]   col9 = 右シーン列
-row9    -      [   下段(未使用)  ]   -
+row0    logo   [ 8 top control buttons ]   <- top function row
+row1..8  -     [    8 × 8 pad grid    ]    col9 = right scene column
+row9    -      [   bottom (unused)    ]    -
 ```
 
-- `row0 col1–4`(LED 1–4)= **↑ ↓ ← →(オクターブ/転調 矢印)**
-- `row0 col5–8`(LED 5–8)= **Session / Note / Custom / Capture 等のモード行**
-- `row1–8 col1–8`(LED 11–88)= **8×8 パッドグリッド**
-- `col9`(LED 19,29,…,89)= **右側シーン/トラック列**
+- `row0 col1–4` (LED 1–4) = **↑ ↓ ← → (octave / transpose arrows)**
+- `row0 col5–8` (LED 5–8) = **Session / Note / Custom / Capture mode row**
+- `row1–8 col1–8` (LED 11–88) = **8×8 pad grid**
+- `col9` (LED 19,29,…,89) = **right scene / track column**
 
 ---
 
-## 2. 画面(サーフェス)別 パレット使用マップ
+## 2. Palette usage map by surface / screen
 
-「パレットを読む 8 箇所」を関数単位で解析した結果。実 RGB は本ファームのパレットから抽出。
+The 8 palette-reading sites, analysed per function. RGB values are extracted from
+this firmware's palette.
 
-| サーフェス / 画面 | 描画コード(実番地) | 使用パレットindex | index の色(本ファーム実値) | 信頼度 |
+| Surface / screen | Render code (runtime addr) | Palette index used | Index colour (this firmware) | Confidence |
 | --- | --- | --- | --- | --- |
-| **全パッド共通レンダラ**(各モードが RAM のパッド状態にindexを置き、ここで色化) | `0x800FD0E`(`~0x800FA02`) | 可変(0–127 すべて) | — | 確定 |
-| **Note モード 8×8 グリッド** | Note 色テーブル `0x08019126` → 上記共通レンダラ | `0x5E` root / `0x24` scale / `0x00` off / `0x15` accent | 紫 `#dc1cfc` / 水色 `#4cbcfc` / 黒 / 緑 `#00fc00` | 確定 |
-| **↑↓←→ オクターブ/転調インジケータ** | `0x8018D74`(loader `0x8018DA2`) | `0x5E`,`0x5F`(系A) / `0x24`,`0x2D`(系B) | 紫`#dc1cfc`/桃`#fc005c` / 水色`#4cbcfc`/`0x2d` | **確定** |
-| 〃 別状態(state==2 の簡易表示) | `0x801639A` / `0x8016408` | `0x00`,`0x0D` | 黒 / 黄 `#fcfc00` | 確定 |
-| **上段モード行 + 右シーン列** | `0x801523C` 近傍 | `0x00` off / `0x01` 微灰 / `0x1C` 明緑 + 選択色(可変) | 黒 / `#3c3c3c` / `#4cfc5c` | 有力 |
-| **丸い機能ボタン(モード選択フィードバック)** | `0x80158D4` 近傍 | `0x09`,`0x15`,`0x35` | 橙赤 `#fc3c00` / 緑 `#00fc00` / マゼンタ `#fc00fc` | 有力 |
-| 〃 関連(ボタン点灯) | `0x8015C86` / `0x8015D36` | `0x09`,`0x15`,`0x1C` + 可変 | 同上 + 明緑 | 有力 |
-| **ホスト(SysEx/MIDI)からのパッド点灯** Programmer / Custom Lighting | `0x801CCCC`(`~0x801CB1E`) | 可変(ホスト指定 0–127) | — | 有力 |
+| **Common pad renderer** (each mode writes an index into RAM pad state; coloured here) | `0x800FD0E` (`~0x800FA02`) | variable (any 0–127) | — | Confirmed |
+| **Note mode 8×8 grid** | Note table `0x08019126` → common renderer | `0x5E` root / `0x24` scale / `0x00` off / `0x15` accent | purple `#dc1cfc` / cyan `#4cbcfc` / black / green `#00fc00` | Confirmed |
+| **↑↓←→ octave / transpose indicator** | `0x8018D74` (loader `0x8018DA2`) | `0x5E`,`0x5F` (set A) / `0x24`,`0x2D` (set B) | purple `#dc1cfc`/pink `#fc005c` / cyan `#4cbcfc`/`0x2D` | **Confirmed** |
+| ↑↓←→ alternate (state==2 simple display) | `0x801639A` / `0x8016408` | `0x00`,`0x0D` | black / yellow `#fcfc00` | Confirmed |
+| **Top mode row + right scene column** | near `0x801523C` | `0x00` off / `0x01` dim grey / `0x1C` bright green + selected (variable) | black / `#3c3c3c` / `#4cfc5c` | Strong |
+| **Round function buttons (mode-select feedback)** | near `0x80158D4` | `0x09`,`0x15`,`0x35` | orange `#fc3c00` / green `#00fc00` / magenta `#fc00fc` | Strong |
+| ↳ related (button lighting) | `0x8015C86` / `0x8015D36` | `0x09`,`0x15`,`0x1C` + variable | same + bright green | Strong |
+| **Host (SysEx/MIDI) pad lighting** Programmer / Custom Lighting | `0x801CCCC` (`~0x801CB1E`) | variable (host-supplied 0–127) | — | Strong |
 
 ---
 
-## 3. 既存 `FIRMWARE_422.md` の候補テーブルに対する検証結果
+## 3. Verification against the candidate table in `FIRMWARE_422.md`
 
-| 既存ドキュメントの記述 | 本調査での結果 |
+| Existing doc claim | Result of this analysis |
 | --- | --- |
-| Note: root `0x5E` / scale `0x24` / off `0x00` / accent `0x15` | **確定**(`0x08019126` のバイト列 `5e 24 00 15` を確認) |
-| Transpose A base `0x5E` / A blend `0x5F` / B base `0x24` / B blend `0x25` | **A は確定(`5E`/`5F`)、B base も確定(`0x24`)。ただし B の 2 色目は逆アセンブル上 `0x2D` であり、ドキュメントの `0x25` とは一致しない**。`0x8018D74`: `add.w r4,palette,#0x178`(file `0xCDBA`, idx `0x5E`)→`[r4,#4]`(file `0xCE86`, idx `0x5F`);`add.w r6,palette,#0x90`(file `0xCE14`, idx `0x24`)→`[r6,#0x24]`(file `0xCE30`, idx **`0x2D`**) |
-| タブ三状態 `0x12974` = disabled `0x01` / idle `0x24` / selected `0x34` | **データは存在(`01 24 34` ×繰返し)するがコードからの参照リテラルは検出できず**(`FIRMWARE_422.md` の「描画経路 未追跡」と整合)。実際の上段ボタン描画(`0x801523C`)は `0x01`/`0x1C` と選択可変色を使っており、`0x24`/`0x34` を使う経路は確認できなかった |
+| Note: root `0x5E` / scale `0x24` / off `0x00` / accent `0x15` | **Confirmed** (bytes `5e 24 00 15` at `0x08019126`) |
+| Transpose A base `0x5E` / A blend `0x5F` / B base `0x24` / B blend `0x25` | **A confirmed (`5E`/`5F`), B base confirmed (`0x24`). But the second B colour is `0x2D` in the disassembly, not the doc's `0x25`.** `0x8018D74`: `add.w r4,palette,#0x178` (file `0xCDBA`, idx `0x5E`) → `[r4,#4]` (file `0xCE86`, idx `0x5F`); `add.w r6,palette,#0x90` (file `0xCE14`, idx `0x24`) → `[r6,#0x24]` (file `0xCE30`, idx **`0x2D`**). Index `0x25` is **never read anywhere** in the firmware. |
+| Tab three-state `0x12974` = disabled `0x01` / idle `0x24` / selected `0x34` | **The data exists (`01 24 34` repeated) but no code reference literal was found** (consistent with `FIRMWARE_422.md`'s "render path untraced"). The actual top-button renderer (`0x801523C`) uses `0x01`/`0x1C` plus a variable selected colour; no path using `0x24`/`0x34` was found. |
 
-> ⚠️ **重要な重なり**: `0x24`(=Note scale 兼 Transpose B base)は複数サーフェスで共有される。
-> アプリ側でこのスロットを書き換えると Note スケール色と転調Bが連動して変わる(既存ドキュメントの注意書きと同じ)。
+> ⚠️ **Important overlap**: `0x24` (= Note scale AND Transpose B base) is shared by
+> several surfaces. Rewriting that slot in the app moves the Note scale colour and
+> transpose B together (same caveat as the existing doc).
 
 ---
 
-## 4. 主要パレットインデックスの実 RGB(本ファーム)
+## 4. Real RGB of the key palette indices (this firmware)
 
-| index | #RGB | 色 | 主な用途 |
+| index | #RGB | colour | main use |
 | ---: | --- | --- | --- |
-| `0x00` | `#000000` | 黒(消灯) | off-scale、未点灯 |
-| `0x01` | `#3c3c3c` | 微灰 | 上段/右列のアイドル |
-| `0x09` | `#fc3c00` | 橙赤 | 機能ボタン |
-| `0x0D` | `#fcfc00` | 黄 | 転調インジケータ(別状態) |
-| `0x15` | `#00fc00` | 緑 | **Note accent**、ボタン点灯 |
-| `0x1C` | `#4cfc5c` | 明緑 | 上段/右列の選択・点灯 |
-| `0x24` | `#4cbcfc` | 水色 | **Note scale / Transpose B base** |
-| `0x25` | `#00acfc` | 青 | Transpose B blend |
-| `0x34` | `#fc3cfc` | マゼンタ | タブ selected 候補(未確認) |
-| `0x35` | `#fc00fc` | マゼンタ | 機能ボタン |
-| `0x5E` | `#dc1cfc` | 紫 | **Note root / Transpose A base** |
-| `0x5F` | `#fc005c` | 桃 | Transpose A blend |
+| `0x00` | `#000000` | black (off) | off-scale, unlit |
+| `0x01` | `#3c3c3c` | dim grey | top / right-column idle |
+| `0x09` | `#fc3c00` | orange | function buttons |
+| `0x0D` | `#fcfc00` | yellow | transpose indicator (alt state) |
+| `0x15` | `#00fc00` | green | **Note accent**, button lighting |
+| `0x1C` | `#4cfc5c` | bright green | top / right-column selected/lit |
+| `0x24` | `#4cbcfc` | cyan | **Note scale / Transpose B base** |
+| `0x2D` | (see palette) | — | **Transpose B blend** (was wrongly `0x25` before) |
+| `0x34` | `#fc3cfc` | magenta | tab "selected" candidate (unconfirmed) |
+| `0x35` | `#fc00fc` | magenta | function buttons |
+| `0x5E` | `#dc1cfc` | purple | **Note root / Transpose A base** |
+| `0x5F` | `#fc005c` | pink | Transpose A blend |
 
 ---
 
-## 5. 画面別まとめ(公開情報による画面名の補完つき)
+## 5. Per-screen summary (screen names from public manuals)
 
-Launchpad X の画面(モード)は公開マニュアル上、**Session / Note / Custom 1–8 / Programmer**、
-および上段の **↑↓←→・Session・Note・Custom・Capture MIDI** ボタン、右の **シーン列** から成る。
-本調査で確認できたパレット利用は以下:
+Launchpad X screens (per the public manuals): **Session / Note / Custom 1–8 /
+Programmer**, plus the top **↑↓←→ · Session · Note · Custom · Capture MIDI** buttons
+and the right **scene column**. Confirmed palette usage:
 
-- **Note モード(8×8)** — root `0x5E` / scale `0x24` / off `0x00` / 押下 accent `0x15`。
-  これらは `0x08019126` の 4 バイトで定義され、`FIRMWARE_422.md` がパッチ対象とする箇所そのもの。**(確定)**
-- **オクターブ/転調 矢印(↑↓←→)** — 系A `0x5E`/`0x5F`、系B `0x24`/`0x25` を `0x8018D74` が直接描画。**(確定)**
-- **上段モード行・右シーン列** — アイドル `0x01`、点灯/選択 `0x1C`、消灯 `0x00`、選択中は可変色。**(有力)**
-- **機能(丸)ボタンの選択フィードバック** — `0x09`/`0x15`/`0x35`。**(有力)**
-- **Programmer / Custom のホスト点灯(MIDI/SysEx)** — ホストが指定したindexをそのまま参照。**(有力)**
-- **Session モード・Custom グリッドのパッド色** — いずれも RAM のパッド状態経由で
-  共通レンダラ `0x800FD0E` が色化するため、固定の専用index定数は持たない(モード側がindexを供給)。**(構造として確定)**
+- **Note mode (8×8)** — root `0x5E` / scale `0x24` / off `0x00` / accent (press) `0x15`.
+  Defined by the 4 bytes at `0x08019126`, the exact bytes `FIRMWARE_422.md` patches. **(Confirmed)**
+- **Octave / transpose arrows (↑↓←→)** — set A `0x5E`/`0x5F`, set B `0x24`/`0x2D`,
+  drawn directly by `0x8018D74`. **(Confirmed)**
+- **Top mode row / right scene column** — idle `0x01`, lit/selected `0x1C`, off `0x00`,
+  current selection is a variable colour. **(Strong)**
+- **Round function-button feedback** — `0x09`/`0x15`/`0x35`. **(Strong)**
+- **Programmer / Custom host lighting (MIDI/SysEx)** — uses the host-supplied index directly. **(Strong)**
+- **Session and Custom grid pad colours** — all go through RAM pad state and the
+  common renderer `0x800FD0E`, so there is no dedicated fixed-index constant (the
+  mode supplies the index). **(Confirmed structurally)**
 
 ---
 
-## 再現手順
+## Reproduce
+
+All scripts are tracked under `tools/` (they import the project's `firmware.js`).
+A fresh checkout can run them directly:
 
 ```powershell
-# 1) SysEx → raw 復号(プロジェクトの firmware.js を利用)
-node work/decode.mjs "C:\Users\masahiro\Downloads\launchpadx-firmware-422.syx" work/firmware.bin
+# 1) Decode SysEx -> raw image (reuses firmware.js); writes work/firmware.bin
+node tools/decode-firmware.mjs "C:\path\to\launchpadx-firmware-422.syx" work\firmware.bin
 
-# 2) 逆アセンブル(実ベース 0x0800C000)
-arm-none-eabi-objdump -D -b binary -m arm -M force-thumb --adjust-vma=0x0800C000 work/firmware.bin > work/fw.lst
+# 2) Disassemble at the real base 0x0800C000
+arm-none-eabi-objdump -D -b binary -m arm -M force-thumb --adjust-vma=0x0800C000 work\firmware.bin > work\fw.lst
 
-# 3) パレット参照箇所の抽出
-node work/analyze2.mjs
+# 3) List palette-reader sites and the constant indices each uses (with file offsets)
+node tools/find-palette-refs.mjs work\firmware.bin
 ```
 
-`work/` 配下のバイナリ・`*.lst`・解析スクリプトは `.gitignore` 済み(リポジトリには載らない)。
+`work/` (binaries, `*.lst`) stays gitignored; the scripts in `tools/` are tracked.

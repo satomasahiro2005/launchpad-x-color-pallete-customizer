@@ -1,170 +1,200 @@
-# Launchpad X 4.2.2 — 画面別グリッド & 色の編集ポイント
+# Launchpad X 4.2.2 — Per-screen grid & colour edit points
 
-目的:**将来「全画面の UI を見ながら、各色が指すパレット番号を変更できる」エディタ**を作るための、
-画面(モード/設定)ごとの「グリッドに何が割り当てられているか」と「その色がファーム内のどこに格納され、編集可能か」の対応表。
+Purpose: groundwork for a **future editor that lets you walk through every
+Launchpad screen and change which palette number each colour points to**. For
+each screen (mode / settings) this lists "what is assigned to the grid" and
+"where the colour is stored in firmware / whether it is editable".
 
-- ファーム解析の詳細・実ベース(`0x0800C000`)・パレット実体(`0x0801E034`)は [COLOR_PALETTE_USAGE.md](./COLOR_PALETTE_USAGE.md) を参照。
-- 出典凡例 — **[FW]** 逆アセンブルで確認 / **[Man]** Novation 公式マニュアル / **[Corr]** FW の色と Man の記述を突き合わせた相関(高確度の推定)。
+- Firmware-analysis details, real base (`0x0800C000`) and palette location
+  (`0x0801E034`) are in [COLOR_PALETTE_USAGE.md](./COLOR_PALETTE_USAGE.md).
+- Source legend — **[FW]** confirmed by disassembly / **[Man]** Novation official
+  manual / **[Corr]** correlation of FW colours with the manual (high-confidence inference).
 
 ---
 
-## 0. 共通:グリッド座標と LED 番号
+## 0. Common: grid coordinates and LED numbers
 
-物理は **9×9(8×8 パッド + 上段機能ボタン + 右シーン列 + ロゴ)**。
+Physically a **9×9 (8×8 pads + top function row + right scene column + logo)**.
 
-### MIDI 番号(Programmer mode 基準。全レイアウト共通の LED index)[Man]
+### MIDI numbers (Programmer-mode basis; the LED index is shared by all layouts) [Man]
 
 ```
-        (上段=CC, row9)   91   92   93   94   95   96   97   98     ← ↑ ↓ ← → / Session / Note / Custom / Capture
+        (top = CC, row9)   91   92   93   94   95   96   97   98   <- ↑ ↓ ← → / Session / Note / Custom / Capture
                         ┌────────────────────────────────────┐
-   row8(上)            │ 81  82  83  84  85  86  87  88       │ 89   ┐
-   row7                │ 71 ...                          78   │ 79   │
-   ...                 │                                      │ ...  │ 右列 Scene Launch (CC, col9)
-   row1(下)            │ 11  12  13  14  15  16  17  18       │ 19   ┘
+   row8 (top)           │ 81  82  83  84  85  86  87  88       │ 89   ┐
+   row7                 │ 71 ...                          78   │ 79   │
+   ...                  │                                      │ ...  │ right Scene Launch (CC, col9)
+   row1 (bottom)        │ 11  12  13  14  15  16  17  18       │ 19   ┘
                         └────────────────────────────────────┘
         bottom-left=11, bottom-right=18, top-left=81, top-right=88,  Logo=99
 ```
 
-- 上段機能ボタン(CC): `91`=↑ `92`=↓ `93`=← `94`=→ `95`=Session `96`=Note `97`=Custom `98`=Capture MIDI
-- 右シーン列(CC, 下→上): `19 29 39 49 59 69 79 89`
-- 点灯チャンネル:Ch1=静止 / Ch2=点滅 / Ch3=パルス [Man]
+- Top function buttons (CC): `91`=↑ `92`=↓ `93`=← `94`=→ `95`=Session `96`=Note `97`=Custom `98`=Capture MIDI
+- Right scene column (CC, bottom→top): `19 29 39 49 59 69 79 89`
+- Lighting channels: Ch1=static / Ch2=flash / Ch3=pulse [Man]
 
-> ⚠️ **ファーム内部 index は別系**(`row*10+col` だが row0=上段・top-down の 0..99)。MIDI 番号 ↔ 内部 index の対応はエディタ実装時に変換テーブルが要る。[FW]
+> ⚠️ The **firmware-internal index is a different scheme** (`row*10+col` but with
+> row0=top, top-down, 0..99). A conversion table between the MIDI numbers and the
+> internal index will be needed when building the editor. [FW]
 
 ---
 
-## 1. Note モード
+## 1. Note mode
 
-**グリッド割り当て**[Man/FW]:8×8 が音階パッド。本アプリの `getGridPitch = col + (7-row)*5`(行ごとに完全4度=5半音ずれる標準レイアウト)。押下で MIDI Note On、ベロシティは打鍵の強さ。上段=モード/転調、右列=シーン。
+**Grid assignment** [Man/FW]: 8×8 are scale pads. This app's `getGridPitch =
+col + (7-row)*5` (the standard layout where each row shifts by a perfect fourth =
+5 semitones). Pressing sends MIDI Note On; velocity = strike force. Top row =
+mode/transpose, right column = scenes.
 
-**使用色(編集ポイント)**:
+**Colours used (edit points)**:
 
-| 役割 | パレットidx(初期) | 格納場所(file offset) | 格納形式 | 編集可否 |
+| Role | Palette idx (default) | Storage (file offset) | Storage form | Editable |
 | --- | --- | --- | --- | --- |
-| Root(ルート音) | `0x5E` | `0x0D126` | `movs` 即値 | ◎ 既存アプリで編集可 |
-| Scale(スケール音) | `0x24` | `0x0D128` | `movs` 即値 | ◎ |
-| Off(スケール外) | `0x00` | `0x0D12E` | `movs` 即値 | ◎ |
-| Accent(押下/強打) | `0x15` | `0x0D130` | `movs` 即値 | ◎ |
+| Root | `0x5E` | `0x0D126` | `movs` immediate | ✓ already editable in the app |
+| Scale | `0x24` | `0x0D128` | `movs` immediate | ✓ |
+| Off (out of scale) | `0x00` | `0x0D12E` | `movs` immediate | ✓ |
+| Accent (press / hard hit) | `0x15` | `0x0D130` | `movs` immediate | ✓ |
 
-これらは RAM のパッド状態に書かれ、共通レンダラ `0x800FD0E` が `palette[idx]` で色化。[FW 確定]
+These are written into RAM pad state and coloured by the common renderer
+`0x800FD0E` via `palette[idx]`. [FW confirmed]
 
 ---
 
-## 2. 上段「↑ ↓ ← →」= オクターブ / 転調インジケータ
+## 2. Top "↑ ↓ ← →" = octave / transpose indicator
 
-**割り当て**:左2つ=オクターブ ±、右2つ=転調(または上下左右で octave/transpose)。長さで色の濃淡(`udiv` で按分)を表示。[FW]
+**Assignment**: left two = octave ±, right two = transpose (length shown as a
+colour gradient via `udiv` interpolation). [FW]
 
-**使用色(編集ポイント)** — 描画関数 `0x8018D74`:
+**Colours used (edit points)** — render function `0x8018D74`:
 
-| 役割 | idx | 格納場所 | 形式 | 備考 |
+| Role | idx | Storage | Form | Note |
 | --- | --- | --- | --- | --- |
-| 系A 基準色 | `0x5E` | `0xCDBA` (`add.w r,palette,#0x178`) | アドレス即値(=idx×4) | `0x178/4 = 0x5E` |
-| 系A 第2色 | `0x5F` | `0xCE86` (`ldr [r,#4]`) | ldr オフセット | `+4` = 次のidx |
-| 系B 基準色 | `0x24` | `0xCE14` (`add.w r,palette,#0x90`) | アドレス即値 | `0x90/4 = 0x24` |
-| 系B 第2色 | **`0x2D`** | `0xCE30` (`ldr [r,#0x24]`) | ldr オフセット | 0x90+0x24=0xB4 → idx`0x2D`(※既存docの`0x25`は誤り) |
-| 簡易表示(state2)点灯/消灯 | `0x0D` / `0x00` | `0xA40A` / `0xA40C` (`ldr [palette,#imm]`) | ldr オフセット | 別関数 `0x8016408` |
+| Set A base | `0x5E` | `0xCDBA` (`add.w r,palette,#0x178`) | address immediate (= idx×4) | `0x178/4 = 0x5E` |
+| Set A 2nd | `0x5F` | `0xCE86` (`ldr [r,#4]`) | ldr offset | `+4` = next idx |
+| Set B base | `0x24` | `0xCE14` (`add.w r,palette,#0x90`) | address immediate | `0x90/4 = 0x24` |
+| Set B 2nd | **`0x2D`** | `0xCE30` (`ldr [r,#0x24]`) | ldr offset | 0x90+0x24=0xB4 → idx `0x2D` (the existing doc's `0x25` is wrong) |
+| Alt display (state2) lit/off | `0x0D` / `0x00` | `0xA40A` / `0xA40C` (`ldr [palette,#imm]`) | ldr offset | separate function `0x8016408` |
 
-> 編集機構:`add.w`/`ldr` の **即値(idx×4 または ×1)** を書き換えると参照idxが変わる。ただし `add.w` は Thumb2 modified-immediate 符号化のため、任意idxにするには再エンコードが必要。RGB だけ変えたいなら該当idxのパレット値を編集するのが安全。
+> Edit mechanism: changing the **immediate (idx×4 or ×1)** of the `add.w`/`ldr`
+> changes the referenced idx. But `add.w` uses Thumb-2 modified-immediate
+> encoding, so arbitrary idx values need re-encoding. To change only the RGB,
+> editing the palette entry for that idx is the safe route.
 
 ---
 
-## 3. 上段「Session / Note / Custom / Capture」+ 右シーン列
+## 3. Top "Session / Note / Custom / Capture" + right scene column
 
-**割り当て**[Man]:上段右4つ=モード切替ボタン、右列=シーン起動 / 設定ページ選択。
+**Assignment** [Man]: the four top-right buttons switch mode; the right column
+launches scenes / selects settings pages.
 
-**使用色(編集ポイント)** — 描画 `0x801523C` 近傍:
+**Colours used (edit points)** — near render `0x801523C`:
 
-| 役割 | idx | 格納場所 | 形式 |
+| Role | idx | Storage | Form |
 | --- | --- | --- | --- |
-| 消灯/未選択 | `0x00` | `0x924A` (`ldr [palette,#0]`) | ldr |
-| アイドル(微灰) | `0x01` | `0x9252` (`ldr.w [palette,#4]`) | ldr.w |
-| 選択/点灯(明緑) | `0x1C` | `0x9266` (`ldr [palette,#0x70]`) | ldr |
-| 補助(暗赤) | `0x07` | `0x931C` (`add.w palette,#0x1C`) | アドレス即値 |
-| 現在モード色 | 可変 | `0x9246` (`ldr.w [palette, idx<<2]`) | テーブル/RAM 由来 |
+| Off / unselected | `0x00` | `0x924A` (`ldr [palette,#0]`) | ldr |
+| Idle (dim grey) | `0x01` | `0x9252` (`ldr.w [palette,#4]`) | ldr.w |
+| Selected / lit (bright green) | `0x1C` | `0x9266` (`ldr [palette,#0x70]`) | ldr |
+| Auxiliary (dim red) | `0x07` | `0x931C` (`add.w palette,#0x1C`) | address immediate |
+| Current-mode colour | variable | `0x9246` (`ldr.w [palette, idx<<2]`) | table/RAM driven |
 
 ---
 
-## 4. Settings(設定)メニュー — Session 長押しで表示
+## 4. Settings menu — hold Session to enter
 
-`Session` を短く長押しで進入。上 4 行に「LED / VEL / AFT / FAD」の文字、右上 4 つの Scene Launch でページ切替。[Man]
-文字描画は `0x800F002`(NULヌル終端のパッドビットマップを 1 個ずつ点灯)。[FW]
+Enter by briefly holding `Session`. The top 4 rows display the text "LED / VEL /
+AFT / FAD"; the top 4 Scene Launch buttons switch pages. [Man]
+Text is drawn by `0x800F002` (lights NUL-terminated pad bitmaps one at a time). [FW]
 
-**ページと各パッドの割り当て**[Man]:
+**Pages and per-pad assignment** [Man]:
 
-| ページ(Scene) | パッドの内容 | 状態色(マニュアル表記) |
+| Page (Scene) | Pad contents | State colours (manual wording) |
 | --- | --- | --- |
-| **LED** | 明るさスライダ(8段)/ LED feedback(内部)/ LED feedback(外部)/ LED sleep | 選択段=**明白**、有効=**明緑**、無効=**暗赤** |
-| **VEL** | ベロシティ ON/OFF / 3種カーブ(Low/Med/High) | 有効=**明緑**/無効=**暗赤**、選択カーブ=**明橙**、非選択=**暗白** |
-| **AFT** | Off / Channel Pressure / Poly + しきい値3段 | 選択=**明るく**、しきい値選択=**明紫**、非選択=**暗白** |
-| **FAD** | フェーダのベロシティ感度 ON/OFF | 有効=**明緑**/無効=**暗赤** |
-| (共通) | Live=緑 Scene / Programmer=橙 Scene | Live=**緑**、Programmer=**橙** |
+| **LED** | brightness slider (8 levels) / LED feedback (internal) / LED feedback (external) / LED sleep | selected level = **bright white**, enabled = **bright green**, disabled = **dim red** |
+| **VEL** | velocity ON/OFF / 3 curves (Low/Med/High) | enabled = **bright green** / disabled = **dim red**, selected curve = **bright orange**, others = **dim white** |
+| **AFT** | Off / Channel Pressure / Poly + 3 thresholds | selected = **bright**, selected threshold = **bright purple**, others = **dim white** |
+| **FAD** | fader velocity sensitivity ON/OFF | enabled = **bright green** / disabled = **dim red** |
+| (shared) | Live = green Scene / Programmer = orange Scene | Live = **green**, Programmer = **orange** |
 
-**色の編集ポイント**[Corr] — Settings 描画クラスタ `0x80158D4`:
+**Colour edit points** [Corr] — Settings render cluster `0x80158D4`:
 
-| マニュアルの色 | パレットidx | 実RGB | 格納場所 | 形式 |
+| Manual colour | Palette idx | Real RGB | Storage | Form |
 | --- | --- | --- | --- | --- |
-| 明緑(有効 / Live) | `0x15` | `#00fc00` | `0x98FC` (`ldr [palette,#0x54]`) | ldr |
-| 明橙(VELカーブ / Programmer) | `0x09` | `#fc3c00` | `0x991E` (`ldr [palette,#0x24]`) | ldr |
-| 明紫(AFTしきい値) | `0x35` | `#fc00fc` | `0x993E` (`ldr.w [palette,#0xD4]`) | ldr.w |
-| 暗赤(無効) | `0x07` | `#3c0000` | (各所 `ldr/ add.w`) | ldr |
-| 暗白(非選択) | `0x01` | `#3c3c3c` | (各所) | ldr |
-| 明白(明るさ選択段) | `0x03` | `#fcfcfc` | (LED ページ) | — |
+| Bright green (enabled / Live) | `0x15` | `#00fc00` | `0x98FC` (`ldr [palette,#0x54]`) | ldr |
+| Bright orange (VEL curve / Programmer) | `0x09` | `#fc3c00` | `0x991E` (`ldr [palette,#0x24]`) | ldr |
+| Bright purple (AFT threshold) | `0x35` | `#fc00fc` | `0x993E` (`ldr.w [palette,#0xD4]`) | ldr.w |
+| Dim red (disabled) | `0x07` | `#3c0000` | (various `ldr`/`add.w`) | ldr |
+| Dim white (unselected) | `0x01` | `#3c3c3c` | (various) | ldr |
+| Bright white (brightness selected level) | `0x03` | `#fcfcfc` | (LED page) | — |
 
-> ✅ Settings の主要色(緑/橙/紫)が `0x80158D4` の `ldr [palette,#…]` 即値とマニュアル記述で一致 →
-> このクラスタが Settings メニューのレンダラであることを確認(`0x800F002` が "LED/VEL/AFT/FAD" 文字も描画)。
-
----
-
-## 5. Session モード
-
-**割り当て**[Man]:8×8 が DAW(Ableton 等)のセッションクリップ。色は DAW から MIDI(Ch1 静止/Ch2 点滅/Ch3 パルス)で送られ、**ファーム固定色ではない**。右列=シーン起動。
-
-**色の出所**:ホスト送信 index → RAM パッド状態 → 共通レンダラ `0x800FD0E`。**固定の編集ポイントなし**(色はホスト依存)。[FW 構造]
+> ✅ The main Settings colours (green/orange/purple) match the `ldr [palette,#…]`
+> immediates in `0x80158D4` and the manual wording → this cluster is the Settings
+> menu renderer (`0x800F002` also draws the "LED/VEL/AFT/FAD" text).
 
 ---
 
-## 6. Custom モード(1–4)
+## 5. Session mode
 
-**割り当て**[Man]:
-- Custom 1:8×8 Note On(工場出荷=Drum Rack 配列)
-- Custom 2:8×8 Note On
-- Custom 3:Lighting(Drum Rack 配列)— 既定で全消灯、ホストの Note でパッド点灯
-- Custom 4:Lighting(Session 配列)
-- Ghost モード:Note→Custom を素早く押すと縁の機能ボタンを消灯
+**Assignment** [Man]: the 8×8 is DAW (Ableton etc.) session clips. Colours are
+sent from the DAW over MIDI (Ch1 static / Ch2 flash / Ch3 pulse) and are **not
+fixed in firmware**. Right column = scene launch.
 
-**色の出所**:Lighting 系はホスト指定 index、内蔵 feedback は設定の LED feedback(内部)に従う。固定色テーブルではなく **可変**(`0x800FD0E` 経由)。[FW 構造]
+**Colour source**: host-sent index → RAM pad state → common renderer `0x800FD0E`.
+**No fixed edit point** (colour is host-dependent). [FW structural]
 
 ---
 
-## 7. Programmer モード
+## 6. Custom modes (1–4)
 
-**割り当て**[Man]:9×9 全面が独立した Note/CC を送出(上記§0 の番号)。電源時は全消灯。
-パッド点灯は MIDI(Note/CC + ベロシティ=色 index)で完全にホスト制御。
+**Assignment** [Man]:
+- Custom 1: 8×8 Note On (factory = Drum Rack layout)
+- Custom 2: 8×8 Note On
+- Custom 3: Lighting (Drum Rack layout) — unlit by default, host Notes light pads
+- Custom 4: Lighting (Session layout)
+- Ghost mode: pressing Note→Custom in quick succession unlights the edge buttons
 
-**色の出所**:ホストが velocity に色 index(0–127)を指定 → そのまま `palette[index]`。
-受信ハンドラ `0x801CCCC`(`~0x801CB1E`)が可変 index でパレットを引く。**固定の編集ポイントなし**(色はホスト依存だが、参照されるパレット実体 `0x0801E034` を編集すれば全 index の見え方は変えられる)。[FW]
-
----
-
-## 8. 将来エディタ向けまとめ:編集の2方式
-
-1. **パレット RGB を編集**(既存アプリの方式):`0x0801E034 + idx*4` の BGR を書き換え。
-   どの画面でも、その画面が使う **idx の色** が変わる。Session/Custom/Programmer のようにホストが index を選ぶ画面でも有効。
-   → 「画面ごとに使われている idx 群」を本書の表でグルーピングし、スウォッチを画面別に並べるだけで実現可能。**推奨・最も安全**。
-
-2. **参照 index を張り替え**(どのスロットを指すか変更):
-   - `movs` 即値(Note テーブル):任意 idx に変更可。◎
-   - `ldr [palette,#imm]`:imm = idx×4。idx<32 は `ldr`(imm5×4)で表現可だが、それ以上や `ldr.w`/`add.w` は符号化の制約・再エンコードが必要。△
-   - ホスト/RAM 由来(Session/Custom/Programmer/現在モード色):静的パッチ不可。✕
-
-> 各画面の「固定色」は本書 §1–§4 の表に集約済み。§5–§7 はホスト依存のため方式1のみ。
+**Colour source**: Lighting modes use a host-supplied index; built-in feedback
+follows the LED-feedback (internal) setting. Not a fixed colour table — **variable**
+(via `0x800FD0E`). [FW structural]
 
 ---
 
-## 出典
+## 7. Programmer mode
+
+**Assignment** [Man]: the full 9×9 sends independent Note/CC (numbers in §0).
+Everything is unlit at power-on. Pad lighting is fully host-controlled via MIDI
+(Note/CC + velocity = colour index).
+
+**Colour source**: the host specifies a colour index (0–127) in velocity → used
+directly as `palette[index]`. The receive handler `0x801CCCC` (`~0x801CB1E`) reads
+the palette with a variable index. **No fixed edit point** (colour is host-dependent,
+but editing the palette entries at `0x0801E034` changes how every index looks). [FW]
+
+---
+
+## 8. Summary for the future editor: two edit strategies
+
+1. **Edit palette RGB** (the existing app's approach): rewrite the BGR at
+   `0x0801E034 + idx*4`. On any screen, the colour of the **idx that screen uses**
+   changes. Works even for host-driven screens (Session/Custom/Programmer).
+   → Group "the idx set each screen uses" from the tables in this doc and lay out
+   swatches per screen. **Recommended and safest.**
+
+2. **Re-point the referenced index** (change which slot is read):
+   - `movs` immediate (Note table): can be set to any idx. ✓
+   - `ldr [palette,#imm]`: imm = idx×4. idx<32 fits a `ldr` (imm5×4), but larger
+     values or `ldr.w`/`add.w` are constrained / need re-encoding. △
+   - Host/RAM driven (Session/Custom/Programmer/current-mode colour): not statically
+     patchable. ✗
+
+> Each screen's "fixed colours" are collected in §1–§4. §5–§7 are host-dependent,
+> so only strategy 1 applies.
+
+---
+
+## Sources
 
 - Novation, *Launchpad X — Programmer's Reference Manual*
   https://fael-downloads-prod.focusrite.com/customer/prod/s3fs-public/downloads/Launchpad%20X%20-%20Programmers%20Reference%20Manual.pdf
 - Novation, *Launchpad X — User Guide v2.0*
   https://files.kraftmusic.com/media/ownersmanual/Novation_Launchpad_X_User_Guide.pdf
-- ファーム解析:`launchpadx-firmware-422.syx`(本リポジトリ手順、`work/` の逆アセンブル)
+- Firmware analysis: `launchpadx-firmware-422.syx` (repro steps in `COLOR_PALETTE_USAGE.md`, scripts in `tools/`)
