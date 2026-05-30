@@ -5,7 +5,71 @@ import {
   TARGET_DISPLAY_LABELS, TOP_PREVIEW_TARGETS, TOP_PREVIEW_LABELS,
   getGridPitch, getGridRole, getGridPitchCount, getFirstGridCellForPitch,
   getTargetPaletteIndex, isSyncedTransposeBase, getOutputPalette, getPreviewCellMeta,
+  collidingFixedSlot, findFreeNoteIndex, fixedSlotIndexEntries,
 } from "../editor-logic.js";
+
+const STOCK_TABLE = { root: 0x5e, scale: 0x24, off: 0x00, accent: 0x15 };
+
+test("collidingFixedSlot: stock note roles that overlap a fixed slot are detected", () => {
+  // In-scale 0x24 collides with Transpose B base, sync OFF
+  assert.equal(collidingFixedSlot("scale", 0x24, {}, false), "transpose-b-base");
+  // Root 0x5e collides with Transpose A base
+  assert.equal(collidingFixedSlot("root", 0x5e, {}, false), "transpose-a-base");
+  // Out-of-scale 0x00 collides with Tab disabled
+  assert.equal(collidingFixedSlot("off", 0x00, {}, false), "tab-disabled");
+});
+
+test("collidingFixedSlot: accent 0x15 hits no fixed slot, and free indices are clear", () => {
+  assert.equal(collidingFixedSlot("accent", 0x15, {}, false), null);
+  assert.equal(collidingFixedSlot("scale", 0x40, {}, false), null); // not a fixed slot
+});
+
+test("collidingFixedSlot: a synced transpose base is an intentional share, not a collision", () => {
+  // scale<->B base is the synced pair; sync ON => not a collision
+  assert.equal(collidingFixedSlot("scale", 0x24, {}, true), null);
+  assert.equal(collidingFixedSlot("root", 0x5e, {}, true), null);
+  // but a non-synced overlap still collides even when sync is on:
+  // Out-of-scale on the Tab-selected slot (0x1c) is never an intentional share
+  assert.equal(collidingFixedSlot("off", 0x1c, {}, true), "tab-selected");
+  // and the *other* base is not excused for this role: scale landing on A base
+  assert.equal(collidingFixedSlot("scale", 0x5e, {}, true), "transpose-a-base");
+});
+
+test("collidingFixedSlot: honours a re-point override of the fixed slot", () => {
+  // Move Transpose B base off 0x24 -> 0x40. Now 0x24 is free for scale...
+  assert.equal(collidingFixedSlot("scale", 0x24, { "transpose-b-base": 0x40 }, false), null);
+  // ...and a note landing on 0x40 now collides with the re-pointed B base.
+  assert.equal(collidingFixedSlot("scale", 0x40, { "transpose-b-base": 0x40 }, false), "transpose-b-base");
+});
+
+test("findFreeNoteIndex: returns a top index unused by any role or fixed slot", () => {
+  const free = findFreeNoteIndex(STOCK_TABLE, {});
+  assert.equal(free, 127); // nothing references 0x7f in stock
+  // every used index is excluded
+  const used = new Set([...Object.values(STOCK_TABLE), ...fixedSlotIndexEntries({}).map(([, i]) => i)]);
+  assert.equal(used.has(free), false);
+});
+
+test("findFreeNoteIndex: skips indices taken by roles or re-pointed slots", () => {
+  // occupy 127 and 126 via a role + a re-pointed fixed slot
+  const table = { ...STOCK_TABLE, accent: 127 };
+  const free = findFreeNoteIndex(table, { "tab-idle": 126 });
+  assert.equal(free, 125);
+});
+
+test("relocation makes the note independent (the actual app sequence)", () => {
+  // Simulate onRgbInput's relocate step for In-scale, sync OFF.
+  const table = { ...STOCK_TABLE };
+  const slots = {};
+  const collision = collidingFixedSlot("scale", table.scale, slots, false);
+  assert.equal(collision, "transpose-b-base");
+  const free = findFreeNoteIndex(table, slots);
+  table.scale = free;
+  // After moving, the note no longer collides with anything, and B base keeps 0x24.
+  assert.equal(collidingFixedSlot("scale", table.scale, slots, false), null);
+  assert.equal(getTargetPaletteIndex(targetById["transpose-b-base"], table, slots), 0x24);
+  assert.notEqual(table.scale, 0x24);
+});
 
 test("getGridPitch maps the corners (origin bottom-left, +1/col, +5/row up)", () => {
   assert.equal(getGridPitch(0, 7), 0);   // bottom-left

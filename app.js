@@ -26,6 +26,8 @@ import {
   getTargetPaletteIndex as getTargetPaletteIndexPure,
   isSyncedTransposeBase as isSyncedTransposeBasePure,
   getOutputPalette as getOutputPalettePure,
+  collidingFixedSlot,
+  findFreeNoteIndex,
 } from "./editor-logic.js";
 
 // Fill for cells outside the 8x8 (top controls, scene column, logo). Dark grey
@@ -252,6 +254,30 @@ function activePaletteIndex() {
 
 function onRgbInput() {
   const clamp = (value) => Math.max(0, Math.min(63, Math.round(Number(value) || 0)));
+  const target = targetById[state.activeTarget];
+
+  // A note role whose stock index is shared with a tab/transpose surface (e.g.
+  // In-scale & Transpose B base both 0x24) would drag that surface along when its
+  // colour is edited. Relocate the note to its own free palette slot first,
+  // carrying the current colour over, so the two become independent. A transpose
+  // base that is intentionally synced to this role is left shared.
+  if (target.kind === "note-role") {
+    const current = state.table[target.id];
+    const collision = collidingFixedSlot(target.id, current, state.slots, state.syncTranspose);
+    if (collision !== null) {
+      const free = findFreeNoteIndex(state.table, state.slots);
+      if (free !== null) {
+        state.palette[free] = [...state.palette[current]];
+        state.table[target.id] = free;
+        const collisionLabel = TARGET_DISPLAY_LABELS[collision] || targetById[collision].label;
+        const noteLabel = TARGET_DISPLAY_LABELS[target.id] || target.label;
+        setNotice(
+          `${noteLabel} moved to its own palette slot 0x${toHex(free)} (was sharing 0x${toHex(current)} with ${collisionLabel}).`
+        );
+      }
+    }
+  }
+
   const index = activePaletteIndex();
   state.palette[index] = [
     clamp(elements.rgbR.value),
