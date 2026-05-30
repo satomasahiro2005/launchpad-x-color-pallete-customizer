@@ -5,6 +5,7 @@ import {
   buildSysexFirmware,
   extractNoteTable,
   extractPalette,
+  isFixedSlotReachable,
   parsePaletteFile,
   readFirmwareFile,
   toHex,
@@ -613,6 +614,12 @@ function renderPalette() {
       td.height = 24;
       td.align = "center";
       td.style.background = cellFill(rgb);
+      // When a fixed tab/transpose target is active, dim the indices it can't be
+      // re-pointed to (the operand encoding only reaches a limited range).
+      const reachable =
+        activeTarget.kind !== "palette-slot" ||
+        isFixedSlotReachable(activeTarget.id, index, state.slots);
+      td.style.opacity = reachable ? "" : "0.25";
       td.title = `0x${toHex(index)} / ${index} / rgb ${rgb.join(" ")}`;
       td.textContent = usedIndices.has(index) ? "." : "";
       if (index === activeIndex) {
@@ -633,6 +640,15 @@ function renderPalette() {
         if (activeTarget.kind === "note-role") {
           state.table[activeTarget.id] = index;
         } else {
+          // Fixed tab/transpose targets re-point by re-encoding a firmware
+          // instruction operand, which only reaches a limited index range —
+          // ignore out-of-range picks and say why.
+          if (!isFixedSlotReachable(activeTarget.id, index, state.slots)) {
+            setNotice(
+              `${TARGET_DISPLAY_LABELS[activeTarget.id] || activeTarget.label} can't be re-pointed to 0x${toHex(index)} — out of the encodable range for this element.`
+            );
+            return;
+          }
           state.slots[activeTarget.id] = index;
         }
         render();
@@ -832,6 +848,7 @@ async function getPatchedFirmware() {
     stockFirmware: state.stockFirmware,
     table: state.table,
     palette: getOutputPalette(),
+    slots: state.slots,
   });
 }
 

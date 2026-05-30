@@ -214,7 +214,136 @@ export async function firmwareHash(firmware) {
   return sha256Hex(firmware);
 }
 
-export function buildPatchedFirmware({ stockFirmware, table, palette }) {
+// --- Tab / transpose colour re-pointing -------------------------------------
+// Unlike the Note table (movs immediates), these colour indices are encoded in
+// the operand of `ldr` / `add.w` instructions (offset = idx×4). Re-pointing them
+// means re-encoding that operand. Offsets/forms come from docs/SCREEN_COLOR_MAP.md
+// and every patch below is checked against the stock encoding first (refuse on
+// mismatch) — verified with arm-none-eabi-objdump in the tests.
+export const FIXED_SLOT_DEFAULTS = {
+  "tab-disabled": 0x00,
+  "tab-idle": 0x01,
+  "tab-selected": 0x1c,
+  "transpose-a-base": 0x5e,
+  "transpose-a-blend": 0x5f,
+  "transpose-b-base": 0x24,
+  "transpose-b-blend": 0x2d,
+};
+// `expect` = the value read() returns from the stock image (abs index, or the
+// relative ldr offset for blends).
+const FIXED_SLOT_CODE = {
+  "tab-disabled": { offset: 0x924a, form: "ldr16", expect: 0x00 },
+  "tab-idle": { offset: 0x9252, form: "ldrw", expect: 0x01 },
+  "tab-selected": { offset: 0x9266, form: "ldr16", expect: 0x1c },
+  "transpose-a-base": { offset: 0xcdba, form: "addw", expect: 0x5e },
+  "transpose-a-blend": { offset: 0xce86, form: "ldr16", relTo: "transpose-a-base", expect: 0x5f - 0x5e },
+  "transpose-b-base": { offset: 0xce14, form: "addw", expect: 0x24 },
+  "transpose-b-blend": { offset: 0xce30, form: "ldr16", relTo: "transpose-b-base", expect: 0x2d - 0x24 },
+};
+
+const rol32 = (v, r) => ((v << r) | (v >>> (32 - r))) >>> 0;
+const rd16 = (fw, o) => fw[o] | (fw[o + 1] << 8);
+const wr16 = (fw, o, hw) => { fw[o] = hw & 0xff; fw[o + 1] = (hw >> 8) & 0xff; };
+
+// Thumb-2 modified immediate (ThumbExpandImm) encoder/decoder.
+export function thumbExpandEncode(v) {
+  v >>>= 0;
+  if (v <= 0xff) return { i: 0, imm3: 0, imm8: v };
+  const b0 = v & 0xff, b1 = (v >>> 8) & 0xff, b2 = (v >>> 16) & 0xff, b3 = (v >>> 24) & 0xff;
+  if (b1 === 0 && b3 === 0 && b0 === b2 && b0 !== 0) return { i: 0, imm3: 1, imm8: b0 };
+  if (b0 === 0 && b2 === 0 && b1 === b3 && b1 !== 0) return { i: 0, imm3: 2, imm8: b1 };
+  if (b0 === b1 && b1 === b2 && b2 === b3 && b0 !== 0) return { i: 0, imm3: 3, imm8: b0 };
+  for (let r = 8; r <= 31; r++) {
+    const base = rol32(v, r);
+    if (base >= 0x80 && base <= 0xff) return { i: (r >> 4) & 1, imm3: (r >> 1) & 7, imm8: ((r & 1) << 7) | (base & 0x7f) };
+  }
+  return null;
+}
+function thumbExpandDecode(i, imm3, imm8) {
+  const ctrl = (i << 3) | imm3;
+  if (ctrl === 0) return imm8;
+  if (ctrl === 1) return ((imm8 << 16) | imm8) >>> 0;
+  if (ctrl === 2) return ((imm8 << 24) | (imm8 << 8)) >>> 0;
+  if (ctrl === 3) return ((imm8 << 24) | (imm8 << 16) | (imm8 << 8) | imm8) >>> 0;
+  const rot = (ctrl << 1) | (imm8 >> 7);
+  const base = 0x80 | (imm8 & 0x7f);
+  return ((base >>> rot) | (base << (32 - rot))) >>> 0;
+}
+
+const SLOT_FORMS = {
+  ldr16: {
+    read: (fw, o) => (rd16(fw, o) >> 6) & 0x1f,
+    write: (fw, o, val) => {
+      if (val < 0 || val > 31) throw new Error(`ldr offset ${val} out of range 0..31`);
+      wr16(fw, o, (rd16(fw, o) & ~(0x1f << 6)) | (val << 6));
+    },
+  },
+  ldrw: {
+    read: (fw, o) => (rd16(fw, o + 2) & 0xfff) >> 2,
+    write: (fw, o, idx) => {
+      if (idx < 0 || idx > 127) throw new Error(`ldr.w index ${idx} out of range`);
+      wr16(fw, o + 2, (rd16(fw, o + 2) & 0xf000) | ((idx << 2) & 0xfff));
+    },
+  },
+  addw: {
+    read: (fw, o) => thumbExpandDecode((rd16(fw, o) >> 10) & 1, (rd16(fw, o + 2) >> 12) & 7, rd16(fw, o + 2) & 0xff) >> 2,
+    write: (fw, o, idx) => {
+      const enc = thumbExpandEncode(idx << 2);
+      if (!enc) throw new Error(`add.w index ${idx} not encodable`);
+      wr16(fw, o, (rd16(fw, o) & ~(1 << 10)) | (enc.i << 10));
+      wr16(fw, o + 2, (enc.imm3 << 12) | (rd16(fw, o + 2) & 0x0f00) | enc.imm8);
+    },
+  },
+};
+
+// Can the target be re-pointed to `idx` given the current re-points (`slots`)?
+export function isFixedSlotReachable(targetId, idx, slots = {}) {
+  const code = FIXED_SLOT_CODE[targetId];
+  if (!code || idx < 0 || idx > 127) return false;
+  if (code.relTo) {
+    const base = slots[code.relTo] ?? FIXED_SLOT_DEFAULTS[code.relTo];
+    return idx >= base && idx <= base + 31;
+  }
+  if (code.form === "ldr16") return idx <= 31;
+  if (code.form === "ldrw") return true;
+  if (code.form === "addw") return thumbExpandEncode(idx << 2) !== null;
+  return false;
+}
+
+// The absolute palette index a fixed target's instruction currently reads.
+export function extractFixedSlotIndex(firmware, targetId) {
+  const code = FIXED_SLOT_CODE[targetId];
+  if (!code) return undefined;
+  const raw = SLOT_FORMS[code.form].read(firmware, code.offset);
+  if (code.relTo) {
+    const base = FIXED_SLOT_CODE[code.relTo];
+    return SLOT_FORMS[base.form].read(firmware, base.offset) + raw;
+  }
+  return raw;
+}
+
+// Re-point the tab/transpose colour instructions per `slots` (id -> abs index).
+function patchFixedSlots(patched, slots) {
+  for (const [id, code] of Object.entries(FIXED_SLOT_CODE)) {
+    const target = slots[id] ?? FIXED_SLOT_DEFAULTS[id];
+    if (target === FIXED_SLOT_DEFAULTS[id]) continue; // unchanged
+    if (!isFixedSlotReachable(id, target, slots)) {
+      throw new Error(`${id} cannot be re-pointed to index ${target} (encoding range).`);
+    }
+    const form = SLOT_FORMS[code.form];
+    if (form.read(patched, code.offset) !== code.expect) {
+      throw new Error(`Unexpected encoding for ${id} at 0x${code.offset.toString(16)}. Refusing to patch.`);
+    }
+    if (code.relTo) {
+      const base = slots[code.relTo] ?? FIXED_SLOT_DEFAULTS[code.relTo];
+      form.write(patched, code.offset, target - base); // relative ldr offset
+    } else {
+      form.write(patched, code.offset, target);
+    }
+  }
+}
+
+export function buildPatchedFirmware({ stockFirmware, table, palette, slots = {} }) {
   const patched = new Uint8Array(stockFirmware);
 
   verifyLpx422Layout(stockFirmware);
@@ -230,6 +359,8 @@ export function buildPatchedFirmware({ stockFirmware, table, palette }) {
   NOTE_ROLES.forEach((role, roleIndex) => {
     patched[NOTE_TABLE_OFFSETS[roleIndex]] = table[role.id];
   });
+
+  patchFixedSlots(patched, slots);
 
   return patched;
 }
