@@ -49,6 +49,10 @@ const state = {
   syncTranspose: false,
   deviceLook: false,
   table: { ...DEFAULT_NOTE_TABLE },
+  // Re-pointed palette index for fixed tab/transpose targets (id -> index).
+  // Empty = use the target's hardcoded firmware slot. Re-pointing never mutates
+  // a palette colour — it only changes which index the target reads.
+  slots: {},
 };
 
 // State-bound wrappers around the pure editor-logic helpers, so call sites stay
@@ -57,7 +61,7 @@ function isSyncedTransposeBase(id) {
   return isSyncedTransposeBasePure(id, state.syncTranspose);
 }
 function getTargetPaletteIndex(target) {
-  return getTargetPaletteIndexPure(target, state.table);
+  return getTargetPaletteIndexPure(target, state.table, state.slots);
 }
 function getOutputPalette() {
   return getOutputPalettePure(state.palette, state.table, state.syncTranspose);
@@ -592,7 +596,7 @@ function renderPalette() {
   const tbody = document.createElement("tbody");
   const usedIndices = new Set([
     ...Object.values(state.table),
-    ...FIXED_PALETTE_TARGETS.map((target) => target.slot),
+    ...FIXED_PALETTE_TARGETS.map((target) => getTargetPaletteIndex(target)),
   ]);
   const activeTarget = targetById[state.activeTarget];
   const activeIndex = getTargetPaletteIndex(activeTarget);
@@ -621,14 +625,17 @@ function renderPalette() {
       });
 
       td.addEventListener("click", () => {
-        // Note roles point at a palette index, so clicking re-points them.
-        // Transpose/tab targets are FIXED palette indices; their colour is edited
-        // with the R/G/B fields. Clicking the palette must NOT overwrite an entry
-        // here — doing so corrupted shared colours (e.g. 0x00 off, 0x01, 0x24).
+        // Clicking the palette RE-POINTS the active target to that index — it
+        // never overwrites the palette colour (the old behaviour corrupted shared
+        // entries like 0x00/0x01/0x24). Note roles store the index in `table`;
+        // tab/transpose targets store an override in `slots`.
+        if (isSyncedTransposeBase(activeTarget.id)) return; // locked base
         if (activeTarget.kind === "note-role") {
           state.table[activeTarget.id] = index;
-          render();
+        } else {
+          state.slots[activeTarget.id] = index;
         }
+        render();
       });
 
       tr.appendChild(td);

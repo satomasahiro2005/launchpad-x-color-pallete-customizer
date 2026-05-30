@@ -82,6 +82,20 @@ test("getTargetPaletteIndex: note roles read the table, fixed read their slot", 
   assert.equal(getTargetPaletteIndex(targetById["tab-selected"], table), 0x1c);
 });
 
+test("getTargetPaletteIndex: fixed targets honour a re-point override in `slots`", () => {
+  const table = { root: 30, scale: 5, off: 0, accent: 21 };
+  const slots = { "tab-selected": 40, "transpose-b-base": 7 };
+  // re-pointed fixed targets follow the override (index change, no colour touched)
+  assert.equal(getTargetPaletteIndex(targetById["tab-selected"], table, slots), 40);
+  assert.equal(getTargetPaletteIndex(targetById["transpose-b-base"], table, slots), 7);
+  // not-overridden fixed targets fall back to their hardcoded slot
+  assert.equal(getTargetPaletteIndex(targetById["tab-idle"], table, slots), 0x01);
+  // override of 0 is respected (not treated as "no override")
+  assert.equal(getTargetPaletteIndex(targetById["tab-idle"], table, { "tab-idle": 0 }), 0);
+  // note roles ignore slots entirely
+  assert.equal(getTargetPaletteIndex(targetById.root, table, { root: 99 }), 30);
+});
+
 test("isSyncedTransposeBase only the two bases, only when sync on", () => {
   assert.equal(isSyncedTransposeBase("transpose-a-base", true), true);
   assert.equal(isSyncedTransposeBase("transpose-b-base", true), true);

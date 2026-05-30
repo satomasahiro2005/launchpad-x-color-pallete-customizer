@@ -68,10 +68,14 @@ export function getFirstGridCellForPitch(pitch) {
   return { x: 0, y: 7 };
 }
 
-// Palette index a target currently points at. Note roles are re-pointable
-// (stored in `table`); fixed targets always read their hardcoded slot.
-export function getTargetPaletteIndex(target, table) {
-  return target.kind === "note-role" ? table[target.id] : target.slot;
+// Palette index a target currently points at. Note roles are re-pointed via
+// `table`; fixed (tab/transpose) targets are re-pointed via `slots` (an override
+// of their hardcoded firmware slot). Re-pointing only changes WHICH index is
+// used — it never overwrites a palette colour.
+export function getTargetPaletteIndex(target, table, slots = {}) {
+  if (target.kind === "note-role") return table[target.id];
+  const override = slots[target.id];
+  return override === undefined ? target.slot : override;
 }
 
 // While sync is on, the transpose BASE colours follow Root/Scale and lock; the
