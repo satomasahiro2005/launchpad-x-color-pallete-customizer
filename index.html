@@ -72,6 +72,10 @@
 
             <h3 class="mt-3 text-sm font-bold">Note color</h3>
             <div id="note-target-list" class="mt-1 flex flex-wrap gap-2"></div>
+            <p class="mt-1 text-xs">Some notes share a stock palette slot with a tab/transpose
+              surface (In-scale &amp; Transpose B base both <code>0x24</code>, Root &amp; A base
+              <code>0x5e</code>). Editing such a note's color auto-moves it to its own free slot
+              so the shared surface keeps its color.</p>
 
             <h3 class="mt-3 text-sm font-bold">Octave / transpose color</h3>
             <label class="mt-1 flex items-center gap-2 text-sm">
@@ -83,6 +87,12 @@
 
             <h3 class="mt-3 text-sm font-bold">Mode / custom tabs</h3>
             <div id="mode-target-list" class="mt-1 flex flex-wrap gap-2"></div>
+
+            <p class="mt-3 text-xs">Tab &amp; transpose targets read a fixed firmware
+              slot. You can re-point them to another palette index by clicking the
+              palette, but only within a limited range (their index lives in a
+              <code>ldr</code>/<code>add.w</code> operand) — out-of-range swatches are dimmed.
+              Or just edit their RGB on the right.</p>
           </section>
         </div>
 

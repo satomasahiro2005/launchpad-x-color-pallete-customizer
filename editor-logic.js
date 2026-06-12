@@ -68,10 +68,49 @@ export function getFirstGridCellForPitch(pitch) {
   return { x: 0, y: 7 };
 }
 
-// Palette index a target currently points at. Note roles are re-pointable
-// (stored in `table`); fixed targets always read their hardcoded slot.
-export function getTargetPaletteIndex(target, table) {
-  return target.kind === "note-role" ? table[target.id] : target.slot;
+// Palette index a target currently points at. Note roles are re-pointed via
+// `table`; fixed (tab/transpose) targets are re-pointed via `slots` (an override
+// of their hardcoded firmware slot). Re-pointing only changes WHICH index is
+// used — it never overwrites a palette colour.
+export function getTargetPaletteIndex(target, table, slots = {}) {
+  if (target.kind === "note-role") return table[target.id];
+  const override = slots[target.id];
+  return override === undefined ? target.slot : override;
+}
+
+// The fixed (tab/transpose) palette slots, resolved to their current effective
+// index (honouring any re-point override in `slots`).
+export function fixedSlotIndexEntries(slots = {}) {
+  return FIXED_PALETTE_TARGETS.map((t) => [
+    t.id,
+    slots[t.id] === undefined ? t.slot : slots[t.id],
+  ]);
+}
+
+// Several stock note roles share a palette index with a tab/transpose slot:
+// In-scale & Transpose B base both `0x24`, Root & A base `0x5e`, Out-of-scale &
+// Tab disabled `0x00`. Editing such a note's colour would also move the shared
+// surface. This returns the id of a fixed slot the note's index collides with
+// (so the caller can relocate the note to its own slot), or null. A transpose
+// base that is *intentionally* synced to this role is not treated as a collision.
+const SYNCED_BASE_FOR_ROLE = { root: "transpose-a-base", scale: "transpose-b-base" };
+export function collidingFixedSlot(roleId, index, slots = {}, syncTranspose = false) {
+  const intentional = syncTranspose ? SYNCED_BASE_FOR_ROLE[roleId] : undefined;
+  for (const [id, slotIndex] of fixedSlotIndexEntries(slots)) {
+    if (id === intentional) continue;
+    if (slotIndex === index) return id;
+  }
+  return null;
+}
+
+// A free palette index to relocate a note to: one referenced by no note role and
+// no fixed slot. Scans from the top of the palette down, so it avoids the low,
+// heavily-referenced indices. Returns null only if every index is referenced.
+export function findFreeNoteIndex(table, slots = {}) {
+  const used = new Set(Object.values(table));
+  for (const [, slotIndex] of fixedSlotIndexEntries(slots)) used.add(slotIndex);
+  for (let i = 127; i >= 0; i--) if (!used.has(i)) return i;
+  return null;
 }
 
 // While sync is on, the transpose BASE colours follow Root/Scale and lock; the

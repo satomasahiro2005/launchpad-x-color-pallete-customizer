@@ -5,6 +5,7 @@ import {
   buildSysexFirmware,
   extractNoteTable,
   extractPalette,
+  isFixedSlotReachable,
   parsePaletteFile,
   readFirmwareFile,
   toHex,
@@ -25,6 +26,8 @@ import {
   getTargetPaletteIndex as getTargetPaletteIndexPure,
   isSyncedTransposeBase as isSyncedTransposeBasePure,
   getOutputPalette as getOutputPalettePure,
+  collidingFixedSlot,
+  findFreeNoteIndex,
 } from "./editor-logic.js";
 
 // Fill for cells outside the 8x8 (top controls, scene column, logo). Dark grey
@@ -49,6 +52,10 @@ const state = {
   syncTranspose: false,
   deviceLook: false,
   table: { ...DEFAULT_NOTE_TABLE },
+  // Re-pointed palette index for fixed tab/transpose targets (id -> index).
+  // Empty = use the target's hardcoded firmware slot. Re-pointing never mutates
+  // a palette colour — it only changes which index the target reads.
+  slots: {},
 };
 
 // State-bound wrappers around the pure editor-logic helpers, so call sites stay
@@ -57,7 +64,7 @@ function isSyncedTransposeBase(id) {
   return isSyncedTransposeBasePure(id, state.syncTranspose);
 }
 function getTargetPaletteIndex(target) {
-  return getTargetPaletteIndexPure(target, state.table);
+  return getTargetPaletteIndexPure(target, state.table, state.slots);
 }
 function getOutputPalette() {
   return getOutputPalettePure(state.palette, state.table, state.syncTranspose);
@@ -247,6 +254,30 @@ function activePaletteIndex() {
 
 function onRgbInput() {
   const clamp = (value) => Math.max(0, Math.min(63, Math.round(Number(value) || 0)));
+  const target = targetById[state.activeTarget];
+
+  // A note role whose stock index is shared with a tab/transpose surface (e.g.
+  // In-scale & Transpose B base both 0x24) would drag that surface along when its
+  // colour is edited. Relocate the note to its own free palette slot first,
+  // carrying the current colour over, so the two become independent. A transpose
+  // base that is intentionally synced to this role is left shared.
+  if (target.kind === "note-role") {
+    const current = state.table[target.id];
+    const collision = collidingFixedSlot(target.id, current, state.slots, state.syncTranspose);
+    if (collision !== null) {
+      const free = findFreeNoteIndex(state.table, state.slots);
+      if (free !== null) {
+        state.palette[free] = [...state.palette[current]];
+        state.table[target.id] = free;
+        const collisionLabel = TARGET_DISPLAY_LABELS[collision] || targetById[collision].label;
+        const noteLabel = TARGET_DISPLAY_LABELS[target.id] || target.label;
+        setNotice(
+          `${noteLabel} moved to its own palette slot 0x${toHex(free)} (was sharing 0x${toHex(current)} with ${collisionLabel}).`
+        );
+      }
+    }
+  }
+
   const index = activePaletteIndex();
   state.palette[index] = [
     clamp(elements.rgbR.value),
@@ -592,7 +623,7 @@ function renderPalette() {
   const tbody = document.createElement("tbody");
   const usedIndices = new Set([
     ...Object.values(state.table),
-    ...FIXED_PALETTE_TARGETS.map((target) => target.slot),
+    ...FIXED_PALETTE_TARGETS.map((target) => getTargetPaletteIndex(target)),
   ]);
   const activeTarget = targetById[state.activeTarget];
   const activeIndex = getTargetPaletteIndex(activeTarget);
@@ -609,6 +640,12 @@ function renderPalette() {
       td.height = 24;
       td.align = "center";
       td.style.background = cellFill(rgb);
+      // When a fixed tab/transpose target is active, dim the indices it can't be
+      // re-pointed to (the operand encoding only reaches a limited range).
+      const reachable =
+        activeTarget.kind !== "palette-slot" ||
+        isFixedSlotReachable(activeTarget.id, index, state.slots);
+      td.style.opacity = reachable ? "" : "0.25";
       td.title = `0x${toHex(index)} / ${index} / rgb ${rgb.join(" ")}`;
       td.textContent = usedIndices.has(index) ? "." : "";
       if (index === activeIndex) {
@@ -621,14 +658,26 @@ function renderPalette() {
       });
 
       td.addEventListener("click", () => {
-        // Note roles point at a palette index, so clicking re-points them.
-        // Transpose/tab targets are FIXED palette indices; their colour is edited
-        // with the R/G/B fields. Clicking the palette must NOT overwrite an entry
-        // here — doing so corrupted shared colours (e.g. 0x00 off, 0x01, 0x24).
+        // Clicking the palette RE-POINTS the active target to that index — it
+        // never overwrites the palette colour (the old behaviour corrupted shared
+        // entries like 0x00/0x01/0x24). Note roles store the index in `table`;
+        // tab/transpose targets store an override in `slots`.
+        if (isSyncedTransposeBase(activeTarget.id)) return; // locked base
         if (activeTarget.kind === "note-role") {
           state.table[activeTarget.id] = index;
-          render();
+        } else {
+          // Fixed tab/transpose targets re-point by re-encoding a firmware
+          // instruction operand, which only reaches a limited index range —
+          // ignore out-of-range picks and say why.
+          if (!isFixedSlotReachable(activeTarget.id, index, state.slots)) {
+            setNotice(
+              `${TARGET_DISPLAY_LABELS[activeTarget.id] || activeTarget.label} can't be re-pointed to 0x${toHex(index)} — out of the encodable range for this element.`
+            );
+            return;
+          }
+          state.slots[activeTarget.id] = index;
         }
+        render();
       });
 
       tr.appendChild(td);
@@ -825,6 +874,7 @@ async function getPatchedFirmware() {
     stockFirmware: state.stockFirmware,
     table: state.table,
     palette: getOutputPalette(),
+    slots: state.slots,
   });
 }
 
